@@ -230,6 +230,9 @@ h2{font-size:17px;margin:0 0 10px}
       <div class="row">
         <button class="btn" id="btnSave">Speichern &amp; neu scannen</button>
         <button class="btn sec" id="btnReloadStatic">Haltestellen-Daten neu laden</button>
+        <button class="btn sec" id="btnTest">Verbindung testen</button>
+      </div>
+      <div id="testOut" class="small"></div><div>
       </div>
     </div>
 
@@ -264,8 +267,11 @@ const store = {
   get(k, d){ try{ const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); }catch(e){ return d; } },
   set(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
 };
-const DEF = {proxy:'auto', custom:'', interval:60, batch:40, fast:true, lines:[], notify:false, notifyMin:10, theme:'', demo:false};
+const MY_PROXY = 'https://itip.danielstadler600.workers.dev/?url={url}';
+const DEF = {proxy:'custom', custom:MY_PROXY, interval:60, batch:40, fast:true, lines:[], notify:false, notifyMin:10, theme:'', demo:false};
 const S = Object.assign({}, DEF, store.get('e2r_settings', {}));
+if(!S.custom) S.custom = MY_PROXY;
+if(!store.get('e2r_v3', false)){ S.proxy = 'custom'; S.custom = MY_PROXY; store.set('e2r_settings', S); store.set('e2r_v3', true); }
 let STATIC = null;          // {lines, stops, seqs, pos, tramStopIds, divaStops}
 let SCAN = {deps:[], trips:[], chains:[], stopsQueried:0, at:0, allTrips:0};
 let scanning = false, lastFull = 0, timer = null, workingProxy = store.get('e2r_proxy', null);
@@ -293,10 +299,10 @@ function wrap(mode, url){
 }
 async function wlFetch(url, asText){
   if(S.demo) return DEMO.fetch(url, asText);
-  let modes = S.proxy === 'auto' ? ['direct','allorigins','codetabs','corsproxy'] : [S.proxy];
+  let modes = S.proxy === 'auto' ? ['direct','allorigins','codetabs','corsproxy'] : S.proxy === 'custom' ? ['custom','allorigins','codetabs'] : [S.proxy];
   if(S.proxy === 'auto' && S.custom) modes.unshift('custom');
   if(S.proxy === 'auto' && workingProxy && modes.includes(workingProxy)) modes = [workingProxy, ...modes.filter(m => m !== workingProxy)];
-  let last;
+  let last; const errs = [];
   for(const m of modes){
     try{
       const ctl = new AbortController(); const to = setTimeout(() => ctl.abort(), 20000);
@@ -308,9 +314,9 @@ async function wlFetch(url, asText){
       if(asText && !/;/.test(txt.slice(0, 300))) throw new Error('keine CSV-Daten');
       if(workingProxy !== m){ workingProxy = m; store.set('e2r_proxy', m); log('Verbindung über: ' + m); }
       return out;
-    }catch(e){ last = e; if(S.proxy === 'auto') log(m + ' fehlgeschlagen: ' + (e.message || e)); }
+    }catch(e){ last = e; errs.push(m + ': ' + (e.name === 'AbortError' ? 'Zeitüberschreitung' : (e.message || e))); log(m + ' fehlgeschlagen: ' + (e.message || e)); }
   }
-  throw last || new Error('keine Verbindung');
+  throw new Error(errs.join(' · ') || 'keine Verbindung');
 }
 
 /* ================= Stammdaten (Haltestellen, Linien, Fahrwege) ================= */
@@ -787,6 +793,20 @@ $('#btnSave').onclick = async () => {
   toast('Gespeichert');
   if(demoBefore !== S.demo){ STATIC = null; SCAN = {deps: [], trips: [], chains: [], at: 0}; await boot(); }
   else { schedule(); scan({full: true}); }
+};
+$('#btnTest').onclick = async () => {
+  const out = $('#testOut'); out.textContent = 'teste…';
+  const saved = {proxy: S.proxy, custom: S.custom};
+  S.proxy = $('#sProxy').value; S.custom = $('#sCustom').value.trim() || MY_PROXY;
+  const res = [];
+  for(const m of ['custom','direct','allorigins','codetabs','corsproxy']){
+    const t0 = performance.now();
+    try{ const r = await fetch(wrap(m, WL + '/monitor?stopId=4201'), {cache:'no-store'}); const j = await r.json();
+      res.push('✅ ' + m + ' (' + Math.round(performance.now() - t0) + ' ms)' + (j.data ? '' : ' – aber keine Daten')); }
+    catch(e){ res.push('❌ ' + m + ': ' + (e.message || e)); }
+    out.innerHTML = res.map(esc).join('<br>');
+  }
+  Object.assign(S, saved);
 };
 $('#btnReloadStatic').onclick = async () => { try{ await loadStatic(true); toast('Haltestellen neu geladen'); scan({full: true}); }catch(e){ note('Stammdaten: ' + esc(e.message), true); } };
 const WORKER = `export default {
