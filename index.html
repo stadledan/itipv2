@@ -605,7 +605,8 @@ function posText(p, T){
   const inMin = ms => { const m = Math.round((ms - T) / 60000); return m <= 0 ? 'gleich' : 'in ' + m + ' min'; };
   switch(p.mode){
     case 'before': return p.to.t - T > 5 * 60000 ? 'startet ab <b>' + esc(stopName(p.to.stopId)) + '</b> um ' + hhmm(p.to.t) : 'nächster Halt <b>' + esc(stopName(p.to.stopId)) + '</b> ' + inMin(p.to.t) + ' (' + hhmm(p.to.t) + ')';
-    case 'between': return 'zwischen ' + esc(stopName(p.from.stopId)) + ' und <b>' + esc(stopName(p.to.stopId)) + '</b> (dort ' + hhmm(p.to.t) + ')' + (p.to.guessed ? ' – vermutete Rückfahrt Richtung ' + esc(p.towards) : '');
+    case 'between': if(stopName(p.from.stopId) === stopName(p.to.stopId)) return 'in <b>' + esc(stopName(p.to.stopId)) + '</b> (Wendeschleife, ab ' + hhmm(p.to.t) + ')' + (p.to.guessed ? ' – vermutete Rückfahrt Richtung ' + esc(p.towards) : '');
+      return 'zwischen ' + esc(stopName(p.from.stopId)) + ' und <b>' + esc(stopName(p.to.stopId)) + '</b> (dort ' + hhmm(p.to.t) + ')' + (p.to.guessed ? ' – vermutete Rückfahrt Richtung ' + esc(p.towards) : '');
     case 'turn': return 'an der Endstelle <b>' + esc(stopName(p.from.stopId)) + '</b>, ' + (p.to.guessed ? 'vermutlich ' : '') + 'Rückfahrt ab ' + hhmm(p.to.t) + ' Richtung ' + esc(p.towards);
     case 'end': return 'Endstelle <b>' + esc(stopName(p.to.stopId)) + '</b> erreicht (' + hhmm(p.to.t) + '), danach unbekannt';
   }
