@@ -326,7 +326,7 @@ function parseCSV(txt){
   return rows.map(r => { const c = r.split(';'); const o = {}; head.forEach((h, i) => o[h] = (c[i] || '').replace(/^"|"$/g, '').trim()); return o; });
 }
 async function loadStatic(force){
-  const key = S.demo ? 'e2r_static_demo' : 'e2r_static_v2';
+  const key = S.demo ? 'e2r_static_demo' : 'e2r_static_v3';
   if(!force && !S.demo){
     const c = store.get(key, null);
     if(c && Date.now() - c.at < 5 * 864e5){ STATIC = c.data; finishStatic(); log('Stammdaten aus Zwischenspeicher'); return; }
@@ -352,29 +352,18 @@ async function loadStatic(force){
     const k = r.LineID + '|' + r.PatternID;
     (pats[k] = pats[k] || {line: lines[r.LineID].name, dir: r.Direction, rows: []}).rows.push([+r.StopSeqCount, r.StopID]);
   }
-  // pro Linie & Richtung: längster Fahrweg = Reihenfolge; andere Fahrwege einsortieren
-  const byLD = {};
+  // alle Fahrwege je Linie behalten (Umleitungen/Kurzführungen sind eigene Fahrwege)
+  const pats2 = {}, pos = {}, seqs = {};
   for(const p of Object.values(pats)){
-    p.seq = p.rows.sort((a, b) => a[0] - b[0]).map(x => x[1]).filter(id => stops[id]);
-    const k = p.line + '|' + p.dir; (byLD[k] = byLD[k] || []).push(p.seq);
+    const seq = p.rows.sort((x, y) => x[0] - y[0]).map(x => x[1]).filter(id => stops[id]);
+    if(seq.length < 2) continue;
+    (pats2[p.line] = pats2[p.line] || []).push({dir: p.dir, seq});
+    pos[p.line] = pos[p.line] || {};
+    seq.forEach(id => { if(!pos[p.line][id]) pos[p.line][id] = {dir: p.dir}; });
+    const k = p.line + '|' + p.dir;
+    if(!seqs[k] || seqs[k].length < seq.length) seqs[k] = seq;
   }
-  const seqs = {}, pos = {};
-  for(const [k, arr] of Object.entries(byLD)){
-    arr.sort((a, b) => b.length - a.length);
-    const main = arr[0]; seqs[k] = main;
-    const [ln, dir] = k.split('|');
-    pos[ln] = pos[ln] || {};
-    main.forEach((id, i) => { if(!pos[ln][id]) pos[ln][id] = {dir, idx: i}; });
-    for(const other of arr.slice(1)){
-      let lastIdx = -1;
-      other.forEach(id => {
-        const mi = main.indexOf(id);
-        if(mi >= 0) lastIdx = mi;
-        else if(!pos[ln][id]) pos[ln][id] = {dir, idx: lastIdx + 0.5};
-      });
-    }
-  }
-  STATIC = {lines: Object.values(lines).sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name, 'de', {numeric: true})), stops, seqs, pos};
+  STATIC = {lines: Object.values(lines).sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name, 'de', {numeric: true})), stops, seqs, pos, pats: pats2};
   if(!S.demo) store.set(key, {at: Date.now(), data: STATIC});
   finishStatic();
   log('Stammdaten geladen: ' + STATIC.lines.length + ' Linien, ' + Object.keys(stops).length + ' Haltepunkte');
@@ -412,7 +401,7 @@ function parseMonitors(json, into){
         const bf = (v.barrierFree !== undefined) ? v.barrierFree : L.barrierFree;
         const realtime = isFinite(tReal) && (v.realtimeSupported !== false) && (L.realtimeSupported !== false);
         into.push({stopId, line: v.name || lname, towards: String(v.towards || L.towards || '').replace(/\s+/g, ' ').trim(),
-          rDir: String(v.richtungsId || L.richtungsId || ''), t, plan: tPlan, e2: bf === false, bfKnown: bf === true || bf === false,
+          rDir: String(v.richtungsId || L.richtungsId || ''), t, plan: tPlan, e2: realtime && bf === false, bfKnown: realtime && (bf === true || bf === false),
           realtime, countdown: dt.countdown});
       }
     }
@@ -460,89 +449,115 @@ async function scan(opts = {}){
 
 /* ================= Fahrten zusammensetzen ================= */
 function median(a){ if(!a.length) return NaN; const s = [...a].sort((x, y) => x - y); const m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; }
+function graphFor(ln){
+  STATIC._g = STATIC._g || {};
+  if(STATIC._g[ln]) return STATIC._g[ln];
+  const succ = {};
+  for(const p of (STATIC.pats[ln] || [])) for(let i = 0; i < p.seq.length - 1; i++){ const a = p.seq[i], b = p.seq[i + 1]; if(a !== b) (succ[a] = succ[a] || new Set()).add(b); }
+  const cache = {};
+  const hops = (from, to) => {
+    if(!cache[from]){ const m = new Map(); let front = [from];
+      for(let h = 1; h <= 5 && front.length; h++){ const nx = []; for(const x of front) for(const y of (succ[x] || [])) if(!m.has(y) && y !== from){ m.set(y, h); nx.push(y); } front = nx; }
+      cache[from] = m; }
+    return cache[from].get(to) || 0;
+  };
+  return STATIC._g[ln] = {succ, hops};
+}
+function distM(a, b){ if(!a || !b) return 1e9; const dy = (a.lat - b.lat) * 111320, dx = (a.lon - b.lon) * 111320 * Math.cos(a.lat * Math.PI / 180); return Math.hypot(dx, dy); }
 function build(deps){
-  const groups = {};
-  for(const d of deps){
-    const p = STATIC.pos[d.line] && STATIC.pos[d.line][d.stopId];
-    if(!p) continue;
-    d.idx = p.idx; d.dir = p.dir;
-    const k = d.line + '|' + p.dir;
-    (groups[k] = groups[k] || []).push(d);
-  }
-  const trips = [], profiles = {};
-  for(const [k, arr] of Object.entries(groups)){
-    // Dubletten (gleicher Steig, gleiche Zeit) raus
-    const seen = new Set(); const list = arr.filter(d => { const s = d.stopId + '@' + Math.round(d.t / 1000); if(seen.has(s)) return false; seen.add(s); return true; });
-    list.sort((a, b) => a.idx - b.idx || a.t - b.t);
-    const ktrips = [];
-    let curIdx = null, usedAtIdx = new Set();
+  const now = Date.now(), byLine = {};
+  for(const d of deps){ if(STATIC.pos[d.line] && STATIC.pos[d.line][d.stopId]) (byLine[d.line] = byLine[d.line] || []).push(d); }
+  const trips = [], segAll = {}, lineDef = {};
+  for(const [ln, arr] of Object.entries(byLine)){
+    const G = graphFor(ln);
+    const seen = new Set();
+    const list = arr.filter(d => { const k = d.stopId + '@' + Math.round(d.t / 1000); if(seen.has(k)) return false; seen.add(k); return true; })
+      .sort((a, b) => a.t - b.t);
+    const lt = [];
     for(const d of list){
-      if(d.idx !== curIdx){ curIdx = d.idx; usedAtIdx = new Set(); }
-      let best = null;
-      for(const tr of ktrips){
-        if(usedAtIdx.has(tr)) continue;
+      let best = null, bestScore = Infinity;
+      for(const tr of lt){
+        if(tr.stops.has(d.stopId)) continue;
         const last = tr.pts[tr.pts.length - 1];
-        const gap = d.idx - last.idx;
-        if(gap <= 0 || gap > 4) continue;
+        if(d.t - last.t > 20 * 60000) continue;
+        const h = G.hops(last.stopId, d.stopId); if(!h) continue;
         const dt = (d.t - last.t) / 1000;
-        if(dt < gap * 20 - 60 || dt > gap * 300 + 120) continue;
+        if(dt < h * 15 - 60 || dt > h * 300 + 120) continue;
         if(d.realtime && last.realtime && d.bfKnown && last.bfKnown && d.e2 !== last.e2) continue;
-        if(!best || last.t > best.pts[best.pts.length - 1].t) best = tr;
+        const score = Math.abs(dt - h * 75) + (h - 1) * 90;
+        if(score < bestScore){ bestScore = score; best = tr; }
       }
-      if(best){ best.pts.push(d); usedAtIdx.add(best); }
-      else { const tr = {key: k, line: d.line, dir: d.dir, pts: [d]}; ktrips.push(tr); usedAtIdx.add(tr); }
+      if(best){ best.pts.push(d); best.stops.add(d.stopId); }
+      else lt.push({line: ln, pts: [d], stops: new Set([d.stopId])});
     }
-    // Fahrzeit-Profil je Abschnitt
-    const segs = {};
-    for(const tr of ktrips) for(let i = 1; i < tr.pts.length; i++){
+    const all = [];
+    for(const tr of lt) for(let i = 1; i < tr.pts.length; i++){
       const a = tr.pts[i - 1], b = tr.pts[i];
-      if(Number.isInteger(a.idx) && b.idx === a.idx + 1) (segs[a.idx] = segs[a.idx] || []).push((b.t - a.t) / 1000);
+      if(G.hops(a.stopId, b.stopId) === 1){ const k = a.stopId + '>' + b.stopId, v = (b.t - a.t) / 1000; (segAll[k] = segAll[k] || []).push(v); all.push(v); }
     }
-    const prof = {}; const all = [];
-    for(const [i, v] of Object.entries(segs)){ prof[i] = median(v); all.push(prof[i]); }
-    prof.def = median(all) || 90;
-    profiles[k] = prof;
-    ktrips.forEach(tr => {
-      const rt = tr.pts.filter(p => p.realtime && p.bfKnown);
-      tr.realtime = rt.length > 0;
-      tr.e2 = rt.length > 0 && rt.filter(p => p.e2).length * 2 > rt.length;
+    lineDef[ln] = median(all) || 80;
+    for(const tr of lt){
+      const rt = tr.pts.filter(p => p.bfKnown);
+      tr.realtime = tr.pts.some(p => p.realtime);
+      tr.e2n = rt.filter(p => p.e2).length;
+      tr.e2 = tr.e2n > 0 && tr.e2n * 2 > rt.length;
       tr.towards = mode(tr.pts.map(p => p.towards));
+      tr.key = ln;
       trips.push(tr);
-    });
-  }
-  // Zeitleisten + Hochrechnung bis zur Endstelle
-  for(const tr of trips){
-    const seq = STATIC.seqs[tr.key] || [];
-    const prof = profiles[tr.key] || {def: 90};
-    tr.tl = tr.pts.map(p => ({stopId: p.stopId, idx: p.idx, t: p.t, est: !p.realtime}));
-    let last = tr.tl[tr.tl.length - 1];
-    if(Number.isInteger(last.idx)){
-      let t = last.t;
-      for(let i = last.idx + 1; i < seq.length; i++){
-        t += ((prof[i - 1] || prof.def) + 5) * 1000;
-        tr.tl.push({stopId: seq[i], idx: i, t, est: true});
-      }
     }
-    tr.endsAtTerminus = seq.length && Math.floor(tr.tl[tr.tl.length - 1].idx) === seq.length - 1;
   }
-  // E2-Umläufe: Rückfahrt an der Endstelle anhängen
+  const seg = {}; for(const [k, v] of Object.entries(segAll)) seg[k] = median(v);
+  // Zeitleiste: gemessene Halte + Hochrechnung entlang des passendsten Fahrwegs
+  for(const tr of trips){
+    tr.tl = tr.pts.map(p => ({stopId: p.stopId, t: p.t, est: !p.realtime}));
+    const last = tr.tl[tr.tl.length - 1];
+    let bestP = null, bestS = -1;
+    const tw = (tr.towards || '').toLowerCase().slice(0, 8);
+    for(const p of (STATIC.pats[tr.line] || [])){
+      const li = p.seq.indexOf(last.stopId); if(li < 0) continue;
+      let sc = 0; for(const st of tr.stops) if(p.seq.includes(st)) sc += 10;
+      const endName = (STATIC.stops[p.seq[p.seq.length - 1]] || {}).name || '';
+      if(tw && endName.toLowerCase().startsWith(tw)) sc += 25;
+      sc -= (p.seq.length - li) * 0.1;
+      if(sc > bestS){ bestS = sc; bestP = p; }
+    }
+    tr.pattern = bestP;
+    if(bestP){
+      let t = last.t, prev = last.stopId;
+      const li = bestP.seq.indexOf(last.stopId);
+      for(let i = li + 1; i < bestP.seq.length; i++){
+        const id = bestP.seq[i];
+        t += ((seg[prev + '>' + id] || lineDef[tr.line] || 80) + 3) * 1000;
+        tr.tl.push({stopId: id, t, est: true}); prev = id;
+      }
+      tr.endsAtTerminus = true;
+    }
+  }
+  // Umlauf: Rückfahrt an der Endstelle anhängen
   const e2 = trips.filter(t => t.e2);
   const claimed = new Set();
-  const byStart = e2.slice().sort((a, b) => a.tl[0].t - b.tl[0].t);
   for(const tr of e2.slice().sort((a, b) => a.tl[a.tl.length - 1].t - b.tl[b.tl.length - 1].t)){
     if(!tr.endsAtTerminus) continue;
     const end = tr.tl[tr.tl.length - 1], endStop = STATIC.stops[end.stopId];
-    const cand = byStart.find(o => o !== tr && !claimed.has(o) && o.line === tr.line && o.dir !== tr.dir &&
-      o.tl[0].idx <= 1 && o.tl[0].t >= end.t - 60000 && o.tl[0].t <= end.t + 25 * 60000 &&
-      (() => { const s = STATIC.stops[o.tl[0].stopId]; return s && endStop && (s.diva === endStop.diva || o.tl[0].idx === 0); })());
+    let cand = null;
+    for(const o of e2){
+      if(o === tr || claimed.has(o) || o.line !== tr.line || o.next === tr) continue;
+      const f = o.tl[0], fs = STATIC.stops[f.stopId];
+      if(f.t < end.t - 90000 || f.t > end.t + 25 * 60000) continue;
+      if(!(fs && endStop && (fs.diva === endStop.diva || distM(fs, endStop) < 450))) continue;
+      if(!cand || f.t < cand.tl[0].t) cand = o;
+    }
     if(cand){ tr.next = cand; claimed.add(cand); }
   }
-  const chains = e2.filter(t => !claimed.has(t)).map(head => {
-    const parts = []; let c = head; while(c && parts.length < 4){ parts.push(c); c = c.next; }
+  let chains = e2.filter(t => !claimed.has(t)).map(head => {
+    const parts = []; let c = head; while(c && parts.length < 4 && !parts.includes(c)){ parts.push(c); c = c.next; }
     const tl = []; parts.forEach((p, pi) => p.tl.forEach(x => tl.push(Object.assign({part: pi, towards: p.towards}, x))));
-    return {id: head.key + '|' + head.pts[0].stopId + '|' + Math.round(head.pts[0].t / 60000), line: head.line, towards: head.towards, parts, tl};
-  }).filter(c => c.tl[c.tl.length - 1].t > Date.now() - 60000);
-  return {deps, trips, chains, allTrips: trips.filter(t => t.realtime).length};
+    const e2n = parts.reduce((s, p) => s + p.e2n, 0);
+    return {id: head.line + '|' + head.pts[0].stopId + '|' + Math.round(head.pts[0].t / 60000), line: head.line, towards: head.towards, parts, tl, e2n};
+  }).filter(c => c.tl[c.tl.length - 1].t > now - 60000);
+  // Einzelne Ausreißer (nur 1 Abfahrt als E2 markiert) als unsicher kennzeichnen
+  chains.forEach(c => { c.unsure = c.e2n < 2; c.active = c.tl[0].t <= now + 8 * 60000; });
+  return {deps, trips, chains, allTrips: trips.filter(t => t.realtime && t.pts.length > 1).length};
 }
 function mode(a){ const c = {}; let best = a[0], n = 0; for(const x of a){ c[x] = (c[x] || 0) + 1; if(c[x] > n){ n = c[x]; best = x; } } return best; }
 function stopName(id){ const s = STATIC.stops[id]; return s ? s.name : 'Steig ' + id; }
@@ -565,7 +580,7 @@ function posAt(ch, T){
 function posText(p, T){
   const inMin = ms => { const m = Math.round((ms - T) / 60000); return m <= 0 ? 'gleich' : 'in ' + m + ' min'; };
   switch(p.mode){
-    case 'before': return 'erreicht <b>' + esc(stopName(p.to.stopId)) + '</b> ' + inMin(p.to.t) + ' (' + hhmm(p.to.t) + ')';
+    case 'before': return (p.to.t - T > 5 * 60000 ? 'startet an <b>' : 'erreicht <b>') + esc(stopName(p.to.stopId)) + '</b> ' + inMin(p.to.t) + ' (' + hhmm(p.to.t) + ')';
     case 'between': return 'zwischen ' + esc(stopName(p.from.stopId)) + ' und <b>' + esc(stopName(p.to.stopId)) + '</b> (dort ' + hhmm(p.to.t) + ')';
     case 'turn': return 'an der Endstelle <b>' + esc(stopName(p.from.stopId)) + '</b>, Rückfahrt ab ' + hhmm(p.to.t) + ' Richtung ' + esc(p.towards);
     case 'end': return 'Endstelle <b>' + esc(stopName(p.to.stopId)) + '</b> erreicht (' + hhmm(p.to.t) + '), danach unbekannt';
@@ -595,7 +610,7 @@ function filteredChains(){
 function renderList(){
   const now = Date.now();
   const lines = [...new Set(SCAN.chains.map(c => c.line))].sort((a, b) => a.localeCompare(b, 'de', {numeric: true}));
-  $('#kE2').textContent = SCAN.at ? SCAN.chains.length : '–';
+  $('#kE2').textContent = SCAN.at ? SCAN.chains.filter(c => c.active && !c.unsure).length : '–';
   $('#kLines').textContent = SCAN.at ? lines.length : '–';
   $('#kAll').textContent = SCAN.at ? SCAN.allTrips : '–';
   $('#kStops').textContent = SCAN.at ? SCAN.stopsQueried : '–';
@@ -604,8 +619,9 @@ function renderList(){
   const el = $('#tripList');
   if(!SCAN.at){ el.innerHTML = '<div class="card empty" style="grid-column:1/-1"><b>Suche läuft…</b>Alle Straßenbahn-Steige werden abgefragt.</div>'; return; }
   if(!arr.length){ el.innerHTML = '<div class="card empty" style="grid-column:1/-1"><b>' + (SCAN.chains.length ? 'Nichts passt zum Filter' : 'Gerade kein E2 unterwegs') + '</b>' + (SCAN.chains.length ? '' : 'In den Echtzeitdaten fährt im Moment keine Straßenbahn ohne Rollstuhlsymbol. E2 kommen vor allem in der Hauptverkehrszeit an Werktagen als Verstärker zum Einsatz – später nochmal schauen.') + '</div>'; return; }
+  const main = arr.filter(c => c.active && !c.unsure), later = arr.filter(c => !c.unsure && !c.active), unsure = arr.filter(c => c.unsure);
   const hzs = horizon === 0 ? [30, 40, 50] : [...new Set([horizon, 30, 40, 50])].sort((a, b) => a - b);
-  el.innerHTML = arr.map(ch => {
+  const card = ch => {
     const pNow = posAt(ch, now);
     const rows = hzs.map(h => { const T = now + h * 60000, p = posAt(ch, T);
       return `<div class="t">+${h} · ${hhmm(T)}</div><div>${posText(p, T)} ${p.est ? '<span class="est">geschätzt</span>' : '<span class="meas">Echtzeit</span>'}</div>`; }).join('');
@@ -616,9 +632,13 @@ function renderList(){
       <div class="now"><b>Jetzt:</b> ${posText(pNow, now)}</div>
       <div class="hz">${rows}</div>
       <details><summary>Alle Halte (${ch.tl.length})${ch.parts.length > 1 ? ' inkl. Rückfahrt' : ''}</summary><ul class="tl">${tl}</ul></details>
-      <div class="row" style="margin-top:8px"><button class="btn sec small" data-map="${esc(ch.id)}">Auf Karte</button></div>
+      <div class="row" style="margin-top:8px"><button class="btn sec small" data-map="${esc(ch.id)}">Auf Karte</button>${ch.unsure ? '<span class="small muted">nur eine Abfahrt als E2 gemeldet – evtl. Datenfehler</span>' : ''}</div>
     </article>`;
-  }).join('');
+  };
+  const sec = (title, list, hint) => list.length ? `<h2 style="grid-column:1/-1;margin:14px 0 0">${title} <span class="muted small">(${list.length})</span></h2>${hint ? `<p class="small muted" style="grid-column:1/-1;margin:0">${hint}</p>` : ''}` + list.map(card).join('') : '';
+  el.innerHTML = (main.length ? main.map(card).join('') : '<div class="card empty" style="grid-column:1/-1"><b>Gerade kein E2 unterwegs</b>Unten siehst du E2-Fahrten, die erst später beginnen.</div>')
+    + sec('Spätere E2-Fahrten', later, 'Fahrten, die erst in über 8 Minuten starten – oft dieselben Züge nach der Wende an der Endstelle.')
+    + sec('Unsicher', unsure, 'Nur eine einzelne Abfahrt ohne Rollstuhlsymbol – kann ein E2 sein oder ein Fehler in den Daten.');
 }
 $('#lineFilter').onclick = e => { const b = e.target.closest('[data-l]'); if(!b) return; const l = b.dataset.l; lineFilter.has(l) ? lineFilter.delete(l) : lineFilter.add(l); renderList(); renderMap(); };
 $('#tripList').onclick = e => { const b = e.target.closest('[data-map]'); if(!b) return; focusId = b.dataset.map; show('map'); };
@@ -661,13 +681,14 @@ function renderMap(){
   // Linienwege der Linien mit E2
   const drawn = new Set();
   for(const c of chains) for(const p of c.parts){
-    if(drawn.has(p.key)) continue; drawn.add(p.key);
-    const pts = (STATIC.seqs[p.key] || []).map(id => STATIC.stops[id]).filter(s => s && isFinite(s.lat)).map(s => [s.lat, s.lon]);
+    if(!p.pattern || drawn.has(p.pattern)) continue; drawn.add(p.pattern);
+    const pts = p.pattern.seq.map(id => STATIC.stops[id]).filter(s => s && isFinite(s.lat)).map(s => [s.lat, s.lon]);
     if(pts.length > 1) L.polyline(pts, {color: '#888', weight: 3, opacity: .35}).addTo(routeLayer);
   }
   const bounds = []; let focusLL = null;
   for(const c of chains){
     const p = posAt(c, T);
+    if(c.unsure || (p.mode === 'before' && p.to.t - T > 3 * 60000)) continue;
     if(!isFinite(p.lat)) { if(p.mode === 'before'){ const s = STATIC.stops[p.to.stopId]; if(s){ p.lat = s.lat; p.lon = s.lon; } } }
     if(!isFinite(p.lat)) continue;
     if($('#mapTrails').checked && v > 0){
@@ -739,6 +760,7 @@ async function openStop(diva, keep){
     const [ln, tw] = k.split('|'); let arr = groups[k].sort((a, b) => a.t - b.t);
     if(onlyE2 && !arr.some(d => d.e2)) return '';
     const cds = arr.slice(0, 6).map(d => { const m = Math.max(0, d.countdown != null ? d.countdown : mins(d.t));
+      if(!d.realtime) return `<span class="cd" style="opacity:.6" title="nur Fahrplan, Fahrzeug unbekannt, ${hhmm(d.t)}">${m}′ ?</span>`;
       return d.e2 ? `<span class="cd e2" title="E2 – nicht barrierefrei, ${hhmm(d.t)}">${m}′ <span style="font-size:10.5px">E2</span></span>`
                   : `<span class="cd" title="${d.bfKnown ? 'barrierefrei' : 'unbekannt'}, ${hhmm(d.t)}">${m}′ ${d.bfKnown ? WHEEL : ''}</span>`; }).join('');
     return `<div class="dep"><span class="lbadge">${esc(ln)}</span><span>${esc(tw)}</span><div class="cds">${cds}</div></div>`;
@@ -746,7 +768,7 @@ async function openStop(diva, keep){
   // Hochrechnung: E2, die diese Station in der nächsten Stunde erreichen
   const idset = new Set(ids);
   const coming = [];
-  for(const ch of SCAN.chains) for(const x of ch.tl) if(idset.has(x.stopId) && x.t > now - 30000 && x.t < now + 65 * 60000) coming.push({ch, x});
+  for(const ch of SCAN.chains) if(!ch.unsure) for(const x of ch.tl) if(idset.has(x.stopId) && x.t > now - 30000 && x.t < now + 65 * 60000) coming.push({ch, x});
   coming.sort((a, b) => a.x.t - b.x.t);
   const comingHtml = coming.length ? coming.map(({ch, x}) => `<div class="dep"><span class="lbadge">${esc(ch.line)}</span><span>→ ${esc(x.towards)}</span><div class="cds"><span class="cd e2">${hhmm(x.t)} · ${Math.max(0, mins(x.t))}′</span> ${x.est ? '<span class="est">geschätzt</span>' : '<span class="meas">Echtzeit</span>'}</div></div>`).join('')
     : '<p class="muted small">Laut letztem Scan kommt in der nächsten Stunde kein E2 hier vorbei.</p>';
@@ -832,7 +854,7 @@ function checkNotify(){
   const now = Date.now();
   for(const fav of f){
     const ids = new Set(STATIC.divaStops[fav.diva] || []);
-    for(const ch of SCAN.chains) for(const x of ch.tl){
+    for(const ch of SCAN.chains) if(!ch.unsure) for(const x of ch.tl){
       if(!ids.has(x.stopId) || x.t < now || x.t > now + S.notifyMin * 60000) continue;
       const key = ch.id + '@' + fav.diva;
       if(notified[key]) continue;
@@ -847,7 +869,7 @@ function checkNotify(){
 /* ================= Rahmen ================= */
 function setStatus(txt){
   if(txt){ $('#status').textContent = txt; return; }
-  $('#status').innerHTML = SCAN.at ? `${S.demo ? 'DEMO · ' : ''}Stand ${hhmm(SCAN.at)}<br>${SCAN.chains.length} E2 gefunden` : (S.demo ? 'DEMO' : '');
+  $('#status').innerHTML = SCAN.at ? `${S.demo ? 'DEMO · ' : ''}Stand ${hhmm(SCAN.at)}<br>${SCAN.chains.filter(c => c.active && !c.unsure).length} E2 unterwegs` : (S.demo ? 'DEMO' : '');
 }
 function prog(f){ $('#prog').style.width = (f > 0 ? Math.min(100, f * 100) : 0) + '%'; }
 function note(html, isErr){ $('#globalNote').innerHTML = html ? `<div class="note ${isErr ? 'err' : ''}">${html}</div>` : ''; }
