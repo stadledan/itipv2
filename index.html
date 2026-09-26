@@ -26,7 +26,7 @@
 *{box-sizing:border-box}
 html,body{margin:0;background:var(--bg);color:var(--text);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-text-size-adjust:100%}
 button,input,select{font:inherit;color:inherit}
-header{position:sticky;top:0;z-index:1000;background:var(--red);color:#fff;padding:10px 16px calc(0px);box-shadow:0 2px 10px rgba(0,0,0,.15)}
+header{position:sticky;top:0;z-index:1000;background:#c8000d;color:#fff;padding:10px 16px calc(0px);box-shadow:0 2px 10px rgba(0,0,0,.15)}
 .hrow{display:flex;align-items:center;gap:10px;max-width:1100px;margin:0 auto}
 .logo{font-weight:800;font-size:19px;letter-spacing:-.3px;display:flex;align-items:center;gap:8px}
 .logo .tag{background:#fff;color:#d6000f;border-radius:6px;padding:1px 6px;font-size:14px}
@@ -507,6 +507,7 @@ function build(deps){
     }
   }
   const seg = {}; for(const [k, v] of Object.entries(segAll)) seg[k] = median(v);
+  const segMed = seg, lineDefG = lineDef;
   // Zeitleiste: gemessene Halte + Hochrechnung entlang des passendsten Fahrwegs
   for(const tr of trips){
     tr.tl = tr.pts.map(p => ({stopId: p.stopId, t: p.t, est: !p.realtime}));
@@ -548,10 +549,26 @@ function build(deps){
       if(!cand || f.t < cand.tl[0].t) cand = o;
     }
     if(cand){ tr.next = cand; claimed.add(cand); }
+    else {
+      // keine gemessene Rückfahrt: Rückfahrt entlang des Gegen-Fahrwegs schätzen (Wendezeit ~6 min)
+      let rp = null;
+      for(const p of (STATIC.pats[tr.line] || [])){
+        if(p === tr.pattern) continue;
+        const fs = STATIC.stops[p.seq[0]];
+        if(!(fs && endStop && (fs.diva === endStop.diva || distM(fs, endStop) < 450))) continue;
+        if(!rp || p.seq.length > rp.seq.length) rp = p;
+      }
+      if(rp){
+        const G = graphFor(tr.line); let t = end.t + 6 * 60000, prev = null; const tl = [];
+        for(const id of rp.seq){ if(prev) t += ((segMed[prev + '>' + id] || lineDefG[tr.line] || 80) + 3) * 1000; tl.push({stopId: id, t, est: true}); prev = id; }
+        const endName = (STATIC.stops[rp.seq[rp.seq.length - 1]] || {}).name || '';
+        tr.next = {line: tr.line, towards: endName, tl, e2n: 0, guessed: true, pts: [{stopId: rp.seq[0], t: tl[0].t}]};
+      }
+    }
   }
   let chains = e2.filter(t => !claimed.has(t)).map(head => {
     const parts = []; let c = head; while(c && parts.length < 4 && !parts.includes(c)){ parts.push(c); c = c.next; }
-    const tl = []; parts.forEach((p, pi) => p.tl.forEach(x => tl.push(Object.assign({part: pi, towards: p.towards}, x))));
+    const tl = []; parts.forEach((p, pi) => p.tl.forEach(x => tl.push(Object.assign({part: pi, towards: p.towards, guessed: !!p.guessed}, x))));
     const e2n = parts.reduce((s, p) => s + p.e2n, 0);
     return {id: head.line + '|' + head.pts[0].stopId + '|' + Math.round(head.pts[0].t / 60000), line: head.line, towards: head.towards, parts, tl, e2n};
   }).filter(c => c.tl[c.tl.length - 1].t > now - 60000);
@@ -580,9 +597,9 @@ function posAt(ch, T){
 function posText(p, T){
   const inMin = ms => { const m = Math.round((ms - T) / 60000); return m <= 0 ? 'gleich' : 'in ' + m + ' min'; };
   switch(p.mode){
-    case 'before': return (p.to.t - T > 5 * 60000 ? 'startet an <b>' : 'erreicht <b>') + esc(stopName(p.to.stopId)) + '</b> ' + inMin(p.to.t) + ' (' + hhmm(p.to.t) + ')';
-    case 'between': return 'zwischen ' + esc(stopName(p.from.stopId)) + ' und <b>' + esc(stopName(p.to.stopId)) + '</b> (dort ' + hhmm(p.to.t) + ')';
-    case 'turn': return 'an der Endstelle <b>' + esc(stopName(p.from.stopId)) + '</b>, Rückfahrt ab ' + hhmm(p.to.t) + ' Richtung ' + esc(p.towards);
+    case 'before': return p.to.t - T > 5 * 60000 ? 'startet ab <b>' + esc(stopName(p.to.stopId)) + '</b> um ' + hhmm(p.to.t) : 'nächster Halt <b>' + esc(stopName(p.to.stopId)) + '</b> ' + inMin(p.to.t) + ' (' + hhmm(p.to.t) + ')';
+    case 'between': return 'zwischen ' + esc(stopName(p.from.stopId)) + ' und <b>' + esc(stopName(p.to.stopId)) + '</b> (dort ' + hhmm(p.to.t) + ')' + (p.to.guessed ? ' – vermutete Rückfahrt Richtung ' + esc(p.towards) : '');
+    case 'turn': return 'an der Endstelle <b>' + esc(stopName(p.from.stopId)) + '</b>, ' + (p.to.guessed ? 'vermutlich ' : '') + 'Rückfahrt ab ' + hhmm(p.to.t) + ' Richtung ' + esc(p.towards);
     case 'end': return 'Endstelle <b>' + esc(stopName(p.to.stopId)) + '</b> erreicht (' + hhmm(p.to.t) + '), danach unbekannt';
   }
 }
@@ -625,7 +642,7 @@ function renderList(){
     const pNow = posAt(ch, now);
     const rows = hzs.map(h => { const T = now + h * 60000, p = posAt(ch, T);
       return `<div class="t">+${h} · ${hhmm(T)}</div><div>${posText(p, T)} ${p.est ? '<span class="est">geschätzt</span>' : '<span class="meas">Echtzeit</span>'}</div>`; }).join('');
-    const tl = ch.tl.map((x, i) => { const prev = i && ch.tl[i - 1].part !== x.part ? `<li class="small muted" style="list-style:none">— Rückfahrt Richtung ${esc(x.towards)} —</li>` : '';
+    const tl = ch.tl.map((x, i) => { const prev = i && ch.tl[i - 1].part !== x.part ? `<li class="small muted" style="list-style:none">— ${x.guessed ? 'vermutete ' : ''}Rückfahrt Richtung ${esc(x.towards)} —</li>` : '';
       return prev + `<li class="${x.est ? 'e' : 'm'} ${x.t < now - 30000 ? 'past' : ''}"><span class="tt">${hhmm(x.t)}</span>${esc(stopName(x.stopId))}</li>`; }).join('');
     return `<article class="card trip">
       <h3><span class="lbadge">${esc(ch.line)}</span><span>→ ${esc(pNow.towards || ch.towards)}</span><span class="e2pill" style="margin-left:auto">E2 · kein ♿</span></h3>
