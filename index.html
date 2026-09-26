@@ -508,6 +508,8 @@ function build(deps){
   }
   const seg = {}; for(const [k, v] of Object.entries(segAll)) seg[k] = median(v);
   const segMed = seg, lineDefG = lineDef;
+  const twc = {}; for(const d of deps){ const k = d.line + '|' + d.stopId; (twc[k] = twc[k] || []).push(d.towards); }
+  const towardsAt = {}; for(const [k, v] of Object.entries(twc)) towardsAt[k] = mode(v);
   // Zeitleiste: gemessene Halte + Hochrechnung entlang des passendsten Fahrwegs
   for(const tr of trips){
     tr.tl = tr.pts.map(p => ({stopId: p.stopId, t: p.t, est: !p.realtime}));
@@ -551,12 +553,17 @@ function build(deps){
     if(cand){ tr.next = cand; claimed.add(cand); }
     else {
       // keine gemessene Rückfahrt: Rückfahrt entlang des Gegen-Fahrwegs schätzen (Wendezeit ~6 min)
-      let rp = null;
+      let rp = null, rpS = -1;
+      const inDiv = new Set(((tr.pattern && tr.pattern.seq) || []).map(id => (STATIC.stops[id] || {}).diva));
       for(const p of (STATIC.pats[tr.line] || [])){
         if(p === tr.pattern) continue;
         const fs = STATIC.stops[p.seq[0]];
         if(!(fs && endStop && (fs.diva === endStop.diva || distM(fs, endStop) < 450))) continue;
-        if(!rp || p.seq.length > rp.seq.length) rp = p;
+        const endName = ((STATIC.stops[p.seq[p.seq.length - 1]] || {}).name || '').toLowerCase();
+        let sc = p.seq.filter(id => inDiv.has((STATIC.stops[id] || {}).diva)).length * 2;
+        // Welche Richtung fahren die Züge dort gerade wirklich ab?
+        for(const id of p.seq.slice(0, 3)){ const tw = towardsAt[tr.line + '|' + id]; if(tw && endName.startsWith(tw.toLowerCase().slice(0, 8))){ sc += 100; break; } }
+        if(sc > rpS){ rpS = sc; rp = p; }
       }
       if(rp){
         const G = graphFor(tr.line); let t = end.t + 6 * 60000, prev = null; const tl = [];
