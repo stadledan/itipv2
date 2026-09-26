@@ -1,0 +1,917 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#c8000d">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>E2-Radar Wien</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+:root{
+  --bg:#f4f4f2; --surface:#ffffff; --surface2:#f0efec; --line:#e2e0db; --text:#1b1b1a; --muted:#6c6a65;
+  --red:#d6000f; --red-soft:#fde8e9; --ok:#1f7a45; --ok-soft:#e3f3e9; --warn:#a35b00; --warn-soft:#fff1dc;
+  --shadow:0 1px 2px rgba(0,0,0,.06),0 4px 14px rgba(0,0,0,.05); --radius:14px;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#121212; --surface:#1c1c1c; --surface2:#252524; --line:#333331; --text:#efeeea; --muted:#a3a19b;
+  --red:#ff4652; --red-soft:#3a1517; --ok:#5fcf8c; --ok-soft:#15301f; --warn:#f0a642; --warn-soft:#352711;
+  --shadow:0 1px 2px rgba(0,0,0,.4);
+}}
+:root[data-theme="dark"]{
+  --bg:#121212; --surface:#1c1c1c; --surface2:#252524; --line:#333331; --text:#efeeea; --muted:#a3a19b;
+  --red:#ff4652; --red-soft:#3a1517; --ok:#5fcf8c; --ok-soft:#15301f; --warn:#f0a642; --warn-soft:#352711;
+  --shadow:0 1px 2px rgba(0,0,0,.4);
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-text-size-adjust:100%}
+button,input,select{font:inherit;color:inherit}
+header{position:sticky;top:0;z-index:1000;background:var(--red);color:#fff;padding:10px 16px calc(0px);box-shadow:0 2px 10px rgba(0,0,0,.15)}
+.hrow{display:flex;align-items:center;gap:10px;max-width:1100px;margin:0 auto}
+.logo{font-weight:800;font-size:19px;letter-spacing:-.3px;display:flex;align-items:center;gap:8px}
+.logo .tag{background:#fff;color:#d6000f;border-radius:6px;padding:1px 6px;font-size:14px}
+.status{margin-left:auto;font-size:12.5px;opacity:.92;text-align:right}
+.hbtn{background:rgba(255,255,255,.18);border:0;color:#fff;border-radius:10px;padding:7px 11px;cursor:pointer;font-weight:600;white-space:nowrap}
+.hbtn:hover{background:rgba(255,255,255,.28)} .hbtn:disabled{opacity:.5;cursor:default}
+nav{display:flex;gap:4px;max-width:1100px;margin:8px auto 0;overflow-x:auto;scrollbar-width:none}
+nav::-webkit-scrollbar{display:none}
+nav button{background:none;border:0;color:#fff;opacity:.8;padding:8px 12px 10px;cursor:pointer;font-weight:600;border-bottom:3px solid transparent;white-space:nowrap}
+nav button.on{opacity:1;border-bottom-color:#fff}
+.progress{height:3px;background:rgba(255,255,255,.25);margin:0 -16px}
+.progress i{display:block;height:100%;width:0;background:#fff;transition:width .2s}
+main{max-width:1100px;margin:0 auto;padding:16px 16px 60px}
+.view{display:none}.view.on{display:block}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:14px}
+.row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.muted{color:var(--muted)} .small{font-size:13px}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:6px 12px;cursor:pointer;font-weight:600;font-size:14px}
+.chip.on{background:var(--text);color:var(--bg);border-color:var(--text)}
+.toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+.toolbar .grow{flex:1;min-width:160px}
+input[type=text],input[type=search],input[type=number],select{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:8px 10px;width:100%}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+.kpi b{display:block;font-size:24px;line-height:1.1;font-variant-numeric:tabular-nums}
+.kpi span{font-size:12.5px;color:var(--muted)}
+@media(max-width:640px){.kpis{grid-template-columns:repeat(2,1fr)}}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px}
+@media(max-width:400px){.grid{grid-template-columns:1fr}}
+.lbadge{display:inline-flex;align-items:center;justify-content:center;min-width:34px;height:28px;padding:0 7px;border-radius:7px;background:var(--red);color:#fff;font-weight:800;font-size:15px}
+.e2pill{display:inline-block;background:var(--red-soft);color:var(--red);border:1px solid var(--red);font-weight:800;font-size:11.5px;border-radius:6px;padding:0 5px;letter-spacing:.3px}
+.est{display:inline-block;background:var(--warn-soft);color:var(--warn);font-size:11px;font-weight:700;border-radius:5px;padding:0 5px}
+.meas{display:inline-block;background:var(--ok-soft);color:var(--ok);font-size:11px;font-weight:700;border-radius:5px;padding:0 5px}
+.trip h3{margin:0;font-size:16px;display:flex;align-items:center;gap:8px}
+.trip .now{margin:8px 0 10px;padding:8px 10px;background:var(--surface2);border-radius:10px;font-size:14px}
+.hz{display:grid;grid-template-columns:auto 1fr;gap:6px 10px;font-size:14px}
+.hz .t{font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
+.trip details{margin-top:8px}
+.trip summary{cursor:pointer;color:var(--muted);font-size:13px}
+.tl{list-style:none;margin:6px 0 0;padding:0 0 0 14px;border-left:2px solid var(--line);font-size:13.5px}
+.tl li{position:relative;padding:2px 0}
+.tl li:before{content:"";position:absolute;left:-19px;top:9px;width:8px;height:8px;border-radius:50%;background:var(--line)}
+.tl li.m:before{background:var(--ok)} .tl li.e:before{background:var(--warn)} .tl li.past{opacity:.45}
+.tl .tt{display:inline-block;width:46px;font-variant-numeric:tabular-nums;font-weight:600}
+.empty{text-align:center;padding:40px 16px;color:var(--muted)}
+.empty b{display:block;color:var(--text);font-size:17px;margin-bottom:6px}
+#map{height:calc(100vh - 250px);min-height:380px;border-radius:var(--radius);border:1px solid var(--line)}
+.slider{display:flex;align-items:center;gap:10px;flex:1;min-width:220px}
+.slider input{flex:1;accent-color:var(--red)}
+.mk{background:var(--red);color:#fff;font-weight:800;border-radius:8px;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;font-size:13px}
+.mk.est{background:#e08a00}
+.dep{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;padding:10px 0;border-top:1px solid var(--line)}
+.dep:first-child{border-top:0}
+.cds{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.cd{display:inline-flex;align-items:center;gap:3px;background:var(--surface2);border-radius:8px;padding:3px 8px;font-weight:700;font-variant-numeric:tabular-nums}
+.cd.e2{background:var(--red-soft);color:var(--red);outline:1.5px solid var(--red)}
+.cd svg{width:14px;height:14px}
+.suggest{position:relative}
+.suggest ul{position:absolute;left:0;right:0;top:100%;z-index:500;background:var(--surface);border:1px solid var(--line);border-radius:10px;margin:4px 0 0;padding:4px;list-style:none;max-height:300px;overflow:auto;box-shadow:var(--shadow)}
+.suggest li{padding:8px 10px;border-radius:8px;cursor:pointer}
+.suggest li:hover,.suggest li.act{background:var(--surface2)}
+.star{background:none;border:0;cursor:pointer;font-size:22px;line-height:1;color:var(--muted)}
+.star.on{color:#e5a400}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--line)}
+th{font-size:12.5px;color:var(--muted);font-weight:600}
+td.n{text-align:right;font-variant-numeric:tabular-nums}
+.bar{height:8px;background:var(--surface2);border-radius:4px;overflow:hidden;min-width:60px}
+.bar i{display:block;height:100%;background:var(--red)}
+.set{display:grid;gap:14px}
+.set label{display:grid;gap:5px;font-weight:600;font-size:14px}
+.set .hint{font-weight:400;color:var(--muted);font-size:12.5px}
+.cb{display:flex!important;grid-template-columns:none!important;align-items:center;gap:8px}
+.cb input{width:18px;height:18px;accent-color:var(--red)}
+.btn{background:var(--text);color:var(--bg);border:0;border-radius:10px;padding:9px 14px;font-weight:700;cursor:pointer}
+.btn.sec{background:var(--surface2);color:var(--text);border:1px solid var(--line)}
+pre{background:var(--surface2);border-radius:10px;padding:10px;overflow:auto;font-size:12px;max-height:260px;white-space:pre-wrap;word-break:break-all}
+.note{background:var(--warn-soft);color:var(--text);border-radius:10px;padding:10px 12px;font-size:13.5px;margin-bottom:14px;border-left:4px solid var(--warn)}
+.err{background:var(--red-soft);border-left-color:var(--red)}
+.linechips .chip{padding:4px 10px;font-size:13px}
+h2{font-size:17px;margin:0 0 10px}
+.lsel{display:flex;flex-wrap:wrap;gap:6px}
+.toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--text);color:var(--bg);padding:10px 16px;border-radius:10px;font-weight:600;z-index:3000;opacity:0;transition:opacity .2s;pointer-events:none}
+.toast.on{opacity:1}
+</style>
+</head>
+<body>
+<header>
+  <div class="hrow">
+    <div class="logo"><span class="tag">E2</span>Radar Wien</div>
+    <div class="status" id="status">lädt…</div>
+    <button class="hbtn" id="btnScan" title="Jetzt aktualisieren">↻</button>
+  </div>
+  <nav id="tabs">
+    <button data-v="list" class="on">Züge</button>
+    <button data-v="map">Karte</button>
+    <button data-v="stop">Haltestelle</button>
+    <button data-v="lines">Linien</button>
+    <button data-v="settings">Einstellungen</button>
+  </nav>
+  <div class="progress"><i id="prog"></i></div>
+</header>
+
+<main>
+  <div id="globalNote"></div>
+
+  <!-- ZÜGE -->
+  <section class="view on" id="v-list">
+    <div class="kpis">
+      <div class="kpi"><b id="kE2">–</b><span>E2 unterwegs</span></div>
+      <div class="kpi"><b id="kLines">–</b><span>Linien mit E2</span></div>
+      <div class="kpi"><b id="kAll">–</b><span>Züge erfasst</span></div>
+      <div class="kpi"><b id="kStops">–</b><span>Steige abgefragt</span></div>
+    </div>
+    <div class="toolbar">
+      <div class="chips" id="hzChips"></div>
+      <div class="grow"><input type="search" id="fText" placeholder="Filter: Linie, Richtung, Haltestelle…"></div>
+      <select id="fSort" style="width:auto">
+        <option value="line">nach Linie</option>
+        <option value="soon">nach Ankunft nächster Halt</option>
+      </select>
+    </div>
+    <div class="linechips chips" id="lineFilter" style="margin-bottom:14px"></div>
+    <div class="grid" id="tripList"></div>
+    <div class="row" style="margin-top:16px;justify-content:flex-end">
+      <button class="btn sec" id="btnCopy">Liste kopieren</button>
+      <button class="btn sec" id="btnCsv">CSV herunterladen</button>
+    </div>
+  </section>
+
+  <!-- KARTE -->
+  <section class="view" id="v-map">
+    <div class="toolbar">
+      <div class="chips" id="mapChips"></div>
+      <div class="slider"><span class="small muted">jetzt</span><input type="range" id="mapT" min="0" max="60" step="1" value="0"><b id="mapTl" style="min-width:92px">jetzt</b></div>
+      <label class="cb small"><input type="checkbox" id="mapTrails" checked> Wege zeigen</label>
+      <button class="btn sec" id="btnLocate">📍 Mein Standort</button>
+    </div>
+    <div id="map"></div>
+    <p class="small muted">Rot = gemessene Position (Echtzeit), orange = hochgerechnet. Tippe auf einen Zug für Details.</p>
+  </section>
+
+  <!-- HALTESTELLE -->
+  <section class="view" id="v-stop">
+    <div class="toolbar">
+      <div class="grow suggest"><input type="search" id="stopQ" placeholder="Haltestelle suchen, z. B. Westbahnhof" autocomplete="off"><ul id="stopSug" hidden></ul></div>
+      <label class="cb small"><input type="checkbox" id="stopOnlyE2"> nur E2</label>
+    </div>
+    <div class="chips" id="favChips" style="margin-bottom:14px"></div>
+    <div id="stopOut"><div class="card empty"><b>Wie im iTip – nur mit E2-Markierung</b>Such dir eine Haltestelle. Abfahrten ohne Rollstuhlsymbol sind die alten E2-Hochflurzüge und werden rot markiert.</div></div>
+  </section>
+
+  <!-- LINIEN -->
+  <section class="view" id="v-lines">
+    <div class="card"><h2>E2-Anteil pro Linie</h2><div id="lineTable"></div>
+    <p class="small muted" style="margin-bottom:0">„Züge erfasst" = alle Straßenbahnen mit Echtzeitdaten, die im aktuellen Scan auf der Linie gefunden wurden.</p></div>
+  </section>
+
+  <!-- EINSTELLUNGEN -->
+  <section class="view" id="v-settings">
+    <div class="card set">
+      <h2>Datenquelle</h2>
+      <label>Verbindung zu den Wiener Linien
+        <select id="sProxy">
+          <option value="auto">Automatisch (direkt, dann öffentliche Proxys)</option>
+          <option value="direct">Direkt</option>
+          <option value="allorigins">Proxy: allorigins.win</option>
+          <option value="codetabs">Proxy: codetabs.com</option>
+          <option value="corsproxy">Proxy: corsproxy.io</option>
+          <option value="custom">Eigener Proxy (empfohlen)</option>
+        </select>
+        <span class="hint">Die Echtzeitdaten kommen aus der offenen Schnittstelle (OGD) der Wiener Linien – dieselben Daten wie im iTip. Blockiert dein Browser den direkten Zugriff (CORS), läuft es über einen Proxy.</span>
+      </label>
+      <label>Eigene Proxy-URL
+        <input type="text" id="sCustom" placeholder="https://mein-worker.workers.dev/?url={url}">
+        <span class="hint"><code>{url}</code> wird durch die kodierte Wiener-Linien-Adresse ersetzt. Ohne Platzhalter wird die Adresse hinten angehängt.</span>
+      </label>
+      <label>Automatisch aktualisieren
+        <select id="sInterval">
+          <option value="0">aus</option><option value="45">alle 45 s</option><option value="60">jede Minute</option><option value="120">alle 2 min</option><option value="300">alle 5 min</option>
+        </select>
+      </label>
+      <label class="cb"><input type="checkbox" id="sFast"> Schnellmodus: nach dem ersten Scan nur noch Linien abfragen, auf denen E2 gefunden wurden (volle Suche alle 10 min)</label>
+      <label>Steige pro Anfrage
+        <input type="number" id="sBatch" min="5" max="100" step="5">
+      </label>
+      <h2 style="margin-top:6px">Linien</h2>
+      <div class="hint muted small">Welche Linien gescannt werden. Nichts ausgewählt = alle Straßenbahnlinien.</div>
+      <div class="lsel" id="sLines"></div>
+      <h2 style="margin-top:6px">Benachrichtigung</h2>
+      <label class="cb"><input type="checkbox" id="sNotify"> Melden, wenn ein E2 zu einer Favoriten-Haltestelle kommt</label>
+      <label>… wenn er in höchstens so vielen Minuten da ist
+        <input type="number" id="sNotifyMin" min="1" max="60">
+      </label>
+      <h2 style="margin-top:6px">Sonstiges</h2>
+      <label>Design
+        <select id="sTheme"><option value="">wie System</option><option value="light">hell</option><option value="dark">dunkel</option></select>
+      </label>
+      <label class="cb"><input type="checkbox" id="sDemo"> Demo-Modus (erfundene Daten, zum Ausprobieren ohne Internet)</label>
+      <div class="row">
+        <button class="btn" id="btnSave">Speichern &amp; neu scannen</button>
+        <button class="btn sec" id="btnReloadStatic">Haltestellen-Daten neu laden</button>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:14px">
+      <h2>Eigener Proxy in 2 Minuten (gratis)</h2>
+      <p class="small">Öffentliche Proxys sind oft langsam oder limitiert. Mit einem kostenlosen Cloudflare Worker läuft das Radar stabil: dash.cloudflare.com → Workers → „Create" → Code ersetzen → Deploy, dann die Worker-Adresse oben mit <code>?url={url}</code> eintragen.</p>
+      <pre id="workerCode"></pre>
+      <button class="btn sec" id="btnCopyWorker">Code kopieren</button>
+    </div>
+
+    <div class="card" style="margin-top:14px">
+      <h2>So funktioniert's</h2>
+      <p class="small">Das Radar fragt alle Straßenbahn-Steige über die Echtzeit-Schnittstelle ab – genau die Daten hinter dem iTip. Bei jeder Abfahrt steht dort, ob das Fahrzeug barrierefrei ist (im iTip das Rollstuhlsymbol). Fehlt es bei einer Straßenbahn, ist es ein alter E2-Hochflurzug. Die Abfahrten eines Zuges an aufeinanderfolgenden Haltestellen werden zu einer Fahrt verknüpft, daraus ergibt sich, wo er in 30, 40 und 50 Minuten ist. Wo die Echtzeitdaten nicht so weit reichen, wird mit den gemessenen Fahrzeiten der Linie hochgerechnet (orange „geschätzt"). An der Endstelle wird, wenn möglich, die Rückfahrt desselben Zuges angehängt.</p>
+      <p class="small muted">Datenquelle: Wiener Linien – data.wien.gv.at (CC BY 4.0). Keine offizielle App der Wiener Linien.</p>
+      <h2>Protokoll</h2>
+      <pre id="log"></pre>
+    </div>
+  </section>
+</main>
+<div class="toast" id="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+"use strict";
+/* ================= Grundlagen ================= */
+const WL = 'https://www.wienerlinien.at/ogd_realtime';
+const CSV = WL + '/doku/ogd/';
+const HORIZONS = [0, 30, 40, 50];
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const store = {
+  get(k, d){ try{ const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); }catch(e){ return d; } },
+  set(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
+};
+const DEF = {proxy:'auto', custom:'', interval:60, batch:40, fast:true, lines:[], notify:false, notifyMin:10, theme:'', demo:false};
+const S = Object.assign({}, DEF, store.get('e2r_settings', {}));
+let STATIC = null;          // {lines, stops, seqs, pos, tramStopIds, divaStops}
+let SCAN = {deps:[], trips:[], chains:[], stopsQueried:0, at:0, allTrips:0};
+let scanning = false, lastFull = 0, timer = null, workingProxy = store.get('e2r_proxy', null);
+let horizon = 30, lineFilter = new Set(), notified = store.get('e2r_notified', {});
+const logLines = [];
+function log(m){ const t = new Date().toLocaleTimeString('de-AT'); logLines.unshift(t + '  ' + m); logLines.length = Math.min(logLines.length, 80); const el = $('#log'); if(el) el.textContent = logLines.join('\n'); }
+function toast(m){ const t = $('#toast'); t.textContent = m; t.classList.add('on'); clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove('on'), 2200); }
+function applyTheme(){ if(S.theme) document.documentElement.dataset.theme = S.theme; else delete document.documentElement.dataset.theme; }
+applyTheme();
+const hhmm = ms => new Date(ms).toLocaleTimeString('de-AT', {hour:'2-digit', minute:'2-digit'});
+const mins = ms => Math.round((ms - Date.now()) / 60000);
+const parseT = s => s ? Date.parse(String(s).replace(/([+-]\d\d)(\d\d)$/, '$1:$2')) : NaN;
+const WHEEL = '<svg viewBox="0 0 24 24" fill="currentColor" aria-label="barrierefrei"><circle cx="11" cy="4" r="2"/><path d="M10 7h2v5h5v2h-7zM9 9.4v2.2A4.5 4.5 0 1 0 14.8 17h2.1A6.5 6.5 0 1 1 9 9.4zM17 14l3 5-1.7 1-2.5-4H15v-2z"/></svg>';
+
+/* ================= Netzwerk ================= */
+function wrap(mode, url){
+  const e = encodeURIComponent(url);
+  switch(mode){
+    case 'direct': return url;
+    case 'allorigins': return 'https://api.allorigins.win/raw?url=' + e;
+    case 'codetabs': return 'https://api.codetabs.com/v1/proxy?quest=' + e;
+    case 'corsproxy': return 'https://corsproxy.io/?url=' + e;
+    case 'custom': return S.custom.includes('{url}') ? S.custom.replace('{url}', e) : S.custom + e;
+  }
+}
+async function wlFetch(url, asText){
+  if(S.demo) return DEMO.fetch(url, asText);
+  let modes = S.proxy === 'auto' ? ['direct','allorigins','codetabs','corsproxy'] : [S.proxy];
+  if(S.proxy === 'auto' && S.custom) modes.unshift('custom');
+  if(S.proxy === 'auto' && workingProxy && modes.includes(workingProxy)) modes = [workingProxy, ...modes.filter(m => m !== workingProxy)];
+  let last;
+  for(const m of modes){
+    try{
+      const ctl = new AbortController(); const to = setTimeout(() => ctl.abort(), 20000);
+      const r = await fetch(wrap(m, url), {signal: ctl.signal, cache: 'no-store'});
+      clearTimeout(to);
+      if(!r.ok) throw new Error('HTTP ' + r.status);
+      const txt = await r.text();
+      const out = asText ? txt : JSON.parse(txt);
+      if(asText && !/;/.test(txt.slice(0, 300))) throw new Error('keine CSV-Daten');
+      if(workingProxy !== m){ workingProxy = m; store.set('e2r_proxy', m); log('Verbindung über: ' + m); }
+      return out;
+    }catch(e){ last = e; if(S.proxy === 'auto') log(m + ' fehlgeschlagen: ' + (e.message || e)); }
+  }
+  throw last || new Error('keine Verbindung');
+}
+
+/* ================= Stammdaten (Haltestellen, Linien, Fahrwege) ================= */
+function parseCSV(txt){
+  const rows = txt.replace(/\r/g, '').split('\n').filter(Boolean);
+  const head = rows.shift().split(';').map(h => h.replace(/"/g, '').trim());
+  return rows.map(r => { const c = r.split(';'); const o = {}; head.forEach((h, i) => o[h] = (c[i] || '').replace(/^"|"$/g, '').trim()); return o; });
+}
+async function loadStatic(force){
+  const key = S.demo ? 'e2r_static_demo' : 'e2r_static_v2';
+  if(!force && !S.demo){
+    const c = store.get(key, null);
+    if(c && Date.now() - c.at < 5 * 864e5){ STATIC = c.data; finishStatic(); log('Stammdaten aus Zwischenspeicher'); return; }
+  }
+  setStatus('lade Haltestellen…');
+  const [lin, fw, hp] = await Promise.all([
+    wlFetch(CSV + 'wienerlinien-ogd-linien.csv', true),
+    wlFetch(CSV + 'wienerlinien-ogd-fahrwegverlaeufe.csv', true),
+    wlFetch(CSV + 'wienerlinien-ogd-haltepunkte.csv', true)
+  ]);
+  const lines = {};
+  for(const r of parseCSV(lin)){
+    if(r.MeansOfTransport === 'ptTram' && r.LineText && r.LineText !== 'WLB') lines[r.LineID] = {id: r.LineID, name: r.LineText, sort: +r.SortingHelper || 0};
+  }
+  const stops = {};
+  for(const r of parseCSV(hp)){
+    const lat = parseFloat(String(r.Latitude).replace(',', '.')), lon = parseFloat(String(r.Longitude).replace(',', '.'));
+    stops[r.StopID] = {id: r.StopID, diva: r.DIVA, name: r.StopText, lat, lon};
+  }
+  const pats = {};
+  for(const r of parseCSV(fw)){
+    if(!lines[r.LineID]) continue;
+    const k = r.LineID + '|' + r.PatternID;
+    (pats[k] = pats[k] || {line: lines[r.LineID].name, dir: r.Direction, rows: []}).rows.push([+r.StopSeqCount, r.StopID]);
+  }
+  // pro Linie & Richtung: längster Fahrweg = Reihenfolge; andere Fahrwege einsortieren
+  const byLD = {};
+  for(const p of Object.values(pats)){
+    p.seq = p.rows.sort((a, b) => a[0] - b[0]).map(x => x[1]).filter(id => stops[id]);
+    const k = p.line + '|' + p.dir; (byLD[k] = byLD[k] || []).push(p.seq);
+  }
+  const seqs = {}, pos = {};
+  for(const [k, arr] of Object.entries(byLD)){
+    arr.sort((a, b) => b.length - a.length);
+    const main = arr[0]; seqs[k] = main;
+    const [ln, dir] = k.split('|');
+    pos[ln] = pos[ln] || {};
+    main.forEach((id, i) => { if(!pos[ln][id]) pos[ln][id] = {dir, idx: i}; });
+    for(const other of arr.slice(1)){
+      let lastIdx = -1;
+      other.forEach(id => {
+        const mi = main.indexOf(id);
+        if(mi >= 0) lastIdx = mi;
+        else if(!pos[ln][id]) pos[ln][id] = {dir, idx: lastIdx + 0.5};
+      });
+    }
+  }
+  STATIC = {lines: Object.values(lines).sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name, 'de', {numeric: true})), stops, seqs, pos};
+  if(!S.demo) store.set(key, {at: Date.now(), data: STATIC});
+  finishStatic();
+  log('Stammdaten geladen: ' + STATIC.lines.length + ' Linien, ' + Object.keys(stops).length + ' Haltepunkte');
+}
+function finishStatic(){
+  const ids = new Set(), byDiva = {};
+  for(const ln in STATIC.pos) for(const id in STATIC.pos[ln]){ ids.add(id); const st = STATIC.stops[id]; if(st){ (byDiva[st.diva] = byDiva[st.diva] || new Set()).add(id); } }
+  STATIC.tramStopIds = [...ids];
+  STATIC.divaStops = Object.fromEntries(Object.entries(byDiva).map(([k, v]) => [k, [...v]]));
+  const seen = {}; STATIC.stations = [];
+  for(const [diva, arr] of Object.entries(STATIC.divaStops)){
+    const st = STATIC.stops[arr[0]]; if(!st || seen[diva]) continue; seen[diva] = 1;
+    const lns = STATIC.lines.filter(l => arr.some(id => STATIC.pos[l.name] && STATIC.pos[l.name][id])).map(l => l.name);
+    STATIC.stations.push({diva, name: st.name, lines: lns, lat: st.lat, lon: st.lon});
+  }
+  STATIC.stations.sort((a, b) => a.name.localeCompare(b.name, 'de'));
+  renderLineSettings();
+}
+
+/* ================= Echtzeit-Scan ================= */
+function parseMonitors(json, into){
+  const mons = (json && json.data && json.data.monitors) || [];
+  const tramNames = new Set(STATIC.lines.map(l => l.name));
+  for(const m of mons){
+    const props = (m.locationStop && m.locationStop.properties) || {};
+    const stopId = String((props.attributes && props.attributes.rbl) || props.name || '');
+    for(const L of (m.lines || [])){
+      const lname = L.name;
+      if(!tramNames.has(lname) || (L.type && L.type !== 'ptTram')) continue;
+      const deps = (L.departures && L.departures.departure) || [];
+      for(const d of deps){
+        const dt = d.departureTime || {}, v = d.vehicle || {};
+        const tReal = parseT(dt.timeReal), tPlan = parseT(dt.timePlanned);
+        const t = isFinite(tReal) ? tReal : (isFinite(tPlan) ? tPlan : Date.now() + (dt.countdown || 0) * 60000);
+        const bf = (v.barrierFree !== undefined) ? v.barrierFree : L.barrierFree;
+        const realtime = isFinite(tReal) && (v.realtimeSupported !== false) && (L.realtimeSupported !== false);
+        into.push({stopId, line: v.name || lname, towards: String(v.towards || L.towards || '').replace(/\s+/g, ' ').trim(),
+          rDir: String(v.richtungsId || L.richtungsId || ''), t, plan: tPlan, e2: bf === false, bfKnown: bf === true || bf === false,
+          realtime, countdown: dt.countdown});
+      }
+    }
+  }
+}
+async function scan(opts = {}){
+  if(scanning || !STATIC) return; scanning = true; $('#btnScan').disabled = true;
+  try{
+    const now = Date.now();
+    let lineSet = S.lines.length ? new Set(S.lines) : null;
+    const e2Lines = [...new Set(SCAN.chains.map(c => c.line))];
+    const doFast = S.fast && !opts.full && e2Lines.length && now - lastFull < 10 * 60000;
+    if(doFast) lineSet = new Set(e2Lines.filter(l => !lineSet || lineSet.has(l)));
+    const ids = STATIC.tramStopIds.filter(id => { if(!lineSet) return true; for(const ln of lineSet) if(STATIC.pos[ln] && STATIC.pos[ln][id]) return true; return false; });
+    const B = Math.max(5, Math.min(100, +S.batch || 40));
+    const batches = []; for(let i = 0; i < ids.length; i += B) batches.push(ids.slice(i, i + B));
+    const deps = []; let done = 0, fails = 0;
+    setStatus('scanne ' + ids.length + ' Steige…'); prog(0.02);
+    const worker = async () => {
+      while(batches.length){
+        const b = batches.shift();
+        const url = WL + '/monitor?' + b.map(id => 'stopId=' + id).join('&');
+        try{ parseMonitors(await wlFetch(url), deps); }
+        catch(e){ fails++; log('Abfrage fehlgeschlagen: ' + (e.message || e)); }
+        done++; prog(done / (done + batches.length));
+      }
+    };
+    await Promise.all([worker(), worker(), worker()]);
+    if(fails && fails === done) throw new Error('Keine Echtzeitdaten erreichbar – siehe Einstellungen › Datenquelle.');
+    // Bei Schnellmodus: Nicht gescannte Linien aus altem Scan übernehmen? Nein – nur gescannte Linien anzeigen.
+    SCAN = build(deps);
+    SCAN.stopsQueried = ids.length; SCAN.at = Date.now(); SCAN.fast = doFast; SCAN.fails = fails;
+    if(!doFast) lastFull = SCAN.at;
+    log('Scan: ' + ids.length + ' Steige, ' + deps.length + ' Abfahrten, ' + SCAN.chains.length + ' E2' + (doFast ? ' (Schnellmodus)' : '') + (fails ? ', ' + fails + ' Fehler' : ''));
+    note(fails ? ('Teilweise unvollständig: ' + fails + ' von ' + done + ' Abfragen fehlgeschlagen.') : '', false);
+    checkNotify();
+    renderAll();
+  }catch(e){
+    note(esc(e.message || e) + (S.demo ? '' : ' <button class="btn sec" style="margin-left:6px" onclick="goSettings()">Einstellungen</button> <button class="btn sec" onclick="enableDemo()">Demo ansehen</button>'), true);
+    log('Fehler: ' + (e.message || e));
+  }finally{
+    scanning = false; $('#btnScan').disabled = false; prog(0); setStatus();
+  }
+}
+
+/* ================= Fahrten zusammensetzen ================= */
+function median(a){ if(!a.length) return NaN; const s = [...a].sort((x, y) => x - y); const m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; }
+function build(deps){
+  const groups = {};
+  for(const d of deps){
+    const p = STATIC.pos[d.line] && STATIC.pos[d.line][d.stopId];
+    if(!p) continue;
+    d.idx = p.idx; d.dir = p.dir;
+    const k = d.line + '|' + p.dir;
+    (groups[k] = groups[k] || []).push(d);
+  }
+  const trips = [], profiles = {};
+  for(const [k, arr] of Object.entries(groups)){
+    // Dubletten (gleicher Steig, gleiche Zeit) raus
+    const seen = new Set(); const list = arr.filter(d => { const s = d.stopId + '@' + Math.round(d.t / 1000); if(seen.has(s)) return false; seen.add(s); return true; });
+    list.sort((a, b) => a.idx - b.idx || a.t - b.t);
+    const ktrips = [];
+    let curIdx = null, usedAtIdx = new Set();
+    for(const d of list){
+      if(d.idx !== curIdx){ curIdx = d.idx; usedAtIdx = new Set(); }
+      let best = null;
+      for(const tr of ktrips){
+        if(usedAtIdx.has(tr)) continue;
+        const last = tr.pts[tr.pts.length - 1];
+        const gap = d.idx - last.idx;
+        if(gap <= 0 || gap > 4) continue;
+        const dt = (d.t - last.t) / 1000;
+        if(dt < gap * 20 - 60 || dt > gap * 300 + 120) continue;
+        if(d.realtime && last.realtime && d.bfKnown && last.bfKnown && d.e2 !== last.e2) continue;
+        if(!best || last.t > best.pts[best.pts.length - 1].t) best = tr;
+      }
+      if(best){ best.pts.push(d); usedAtIdx.add(best); }
+      else { const tr = {key: k, line: d.line, dir: d.dir, pts: [d]}; ktrips.push(tr); usedAtIdx.add(tr); }
+    }
+    // Fahrzeit-Profil je Abschnitt
+    const segs = {};
+    for(const tr of ktrips) for(let i = 1; i < tr.pts.length; i++){
+      const a = tr.pts[i - 1], b = tr.pts[i];
+      if(Number.isInteger(a.idx) && b.idx === a.idx + 1) (segs[a.idx] = segs[a.idx] || []).push((b.t - a.t) / 1000);
+    }
+    const prof = {}; const all = [];
+    for(const [i, v] of Object.entries(segs)){ prof[i] = median(v); all.push(prof[i]); }
+    prof.def = median(all) || 90;
+    profiles[k] = prof;
+    ktrips.forEach(tr => {
+      const rt = tr.pts.filter(p => p.realtime && p.bfKnown);
+      tr.realtime = rt.length > 0;
+      tr.e2 = rt.length > 0 && rt.filter(p => p.e2).length * 2 > rt.length;
+      tr.towards = mode(tr.pts.map(p => p.towards));
+      trips.push(tr);
+    });
+  }
+  // Zeitleisten + Hochrechnung bis zur Endstelle
+  for(const tr of trips){
+    const seq = STATIC.seqs[tr.key] || [];
+    const prof = profiles[tr.key] || {def: 90};
+    tr.tl = tr.pts.map(p => ({stopId: p.stopId, idx: p.idx, t: p.t, est: !p.realtime}));
+    let last = tr.tl[tr.tl.length - 1];
+    if(Number.isInteger(last.idx)){
+      let t = last.t;
+      for(let i = last.idx + 1; i < seq.length; i++){
+        t += ((prof[i - 1] || prof.def) + 5) * 1000;
+        tr.tl.push({stopId: seq[i], idx: i, t, est: true});
+      }
+    }
+    tr.endsAtTerminus = seq.length && Math.floor(tr.tl[tr.tl.length - 1].idx) === seq.length - 1;
+  }
+  // E2-Umläufe: Rückfahrt an der Endstelle anhängen
+  const e2 = trips.filter(t => t.e2);
+  const claimed = new Set();
+  const byStart = e2.slice().sort((a, b) => a.tl[0].t - b.tl[0].t);
+  for(const tr of e2.slice().sort((a, b) => a.tl[a.tl.length - 1].t - b.tl[b.tl.length - 1].t)){
+    if(!tr.endsAtTerminus) continue;
+    const end = tr.tl[tr.tl.length - 1], endStop = STATIC.stops[end.stopId];
+    const cand = byStart.find(o => o !== tr && !claimed.has(o) && o.line === tr.line && o.dir !== tr.dir &&
+      o.tl[0].idx <= 1 && o.tl[0].t >= end.t - 60000 && o.tl[0].t <= end.t + 25 * 60000 &&
+      (() => { const s = STATIC.stops[o.tl[0].stopId]; return s && endStop && (s.diva === endStop.diva || o.tl[0].idx === 0); })());
+    if(cand){ tr.next = cand; claimed.add(cand); }
+  }
+  const chains = e2.filter(t => !claimed.has(t)).map(head => {
+    const parts = []; let c = head; while(c && parts.length < 4){ parts.push(c); c = c.next; }
+    const tl = []; parts.forEach((p, pi) => p.tl.forEach(x => tl.push(Object.assign({part: pi, towards: p.towards}, x))));
+    return {id: head.key + '|' + head.pts[0].stopId + '|' + Math.round(head.pts[0].t / 60000), line: head.line, towards: head.towards, parts, tl};
+  }).filter(c => c.tl[c.tl.length - 1].t > Date.now() - 60000);
+  return {deps, trips, chains, allTrips: trips.filter(t => t.realtime).length};
+}
+function mode(a){ const c = {}; let best = a[0], n = 0; for(const x of a){ c[x] = (c[x] || 0) + 1; if(c[x] > n){ n = c[x]; best = x; } } return best; }
+function stopName(id){ const s = STATIC.stops[id]; return s ? s.name : 'Steig ' + id; }
+function posAt(ch, T){
+  const tl = ch.tl;
+  if(T < tl[0].t) return {mode: 'before', to: tl[0], est: tl[0].est, towards: tl[0].towards};
+  for(let i = 0; i < tl.length - 1; i++){
+    const a = tl[i], b = tl[i + 1];
+    if(T >= a.t && T < b.t){
+      const f = (T - a.t) / Math.max(1, b.t - a.t);
+      const sa = STATIC.stops[a.stopId], sb = STATIC.stops[b.stopId];
+      const turn = a.part !== b.part;
+      return {mode: turn ? 'turn' : 'between', from: a, to: b, est: b.est || a.est, towards: b.towards,
+        lat: sa && sb ? sa.lat + (sb.lat - sa.lat) * f : NaN, lon: sa && sb ? sa.lon + (sb.lon - sa.lon) * f : NaN};
+    }
+  }
+  const l = tl[tl.length - 1], s = STATIC.stops[l.stopId];
+  return {mode: 'end', to: l, est: true, towards: l.towards, lat: s && s.lat, lon: s && s.lon};
+}
+function posText(p, T){
+  const inMin = ms => { const m = Math.round((ms - T) / 60000); return m <= 0 ? 'gleich' : 'in ' + m + ' min'; };
+  switch(p.mode){
+    case 'before': return 'erreicht <b>' + esc(stopName(p.to.stopId)) + '</b> ' + inMin(p.to.t) + ' (' + hhmm(p.to.t) + ')';
+    case 'between': return 'zwischen ' + esc(stopName(p.from.stopId)) + ' und <b>' + esc(stopName(p.to.stopId)) + '</b> (dort ' + hhmm(p.to.t) + ')';
+    case 'turn': return 'an der Endstelle <b>' + esc(stopName(p.from.stopId)) + '</b>, Rückfahrt ab ' + hhmm(p.to.t) + ' Richtung ' + esc(p.towards);
+    case 'end': return 'Endstelle <b>' + esc(stopName(p.to.stopId)) + '</b> erreicht (' + hhmm(p.to.t) + '), danach unbekannt';
+  }
+}
+
+/* ================= Anzeige: Züge ================= */
+function renderHzChips(){
+  const make = (el, cur, fn) => { el.innerHTML = HORIZONS.map(h => `<button class="chip ${h === cur ? 'on' : ''}" data-h="${h}">${h ? '+' + h + ' min' : 'jetzt'}</button>`).join(''); el.onclick = e => { const b = e.target.closest('[data-h]'); if(b) fn(+b.dataset.h); }; };
+  make($('#hzChips'), horizon, h => { horizon = h; renderHzChips(); renderList(); });
+  make($('#mapChips'), +$('#mapT').value, h => { $('#mapT').value = h; renderHzChips(); renderMap(); });
+}
+function chainMatches(ch, q){
+  if(!q) return true; q = q.toLowerCase();
+  if(ch.line.toLowerCase() === q) return true;
+  return (ch.line + ' ' + ch.towards + ' ' + ch.tl.map(x => stopName(x.stopId)).join(' ')).toLowerCase().includes(q);
+}
+function filteredChains(){
+  const q = $('#fText').value.trim();
+  let arr = SCAN.chains.filter(c => (!lineFilter.size || lineFilter.has(c.line)) && chainMatches(c, q));
+  const sortBy = $('#fSort').value, now = Date.now();
+  arr.sort(sortBy === 'soon'
+    ? (a, b) => (posAt(a, now).to.t - posAt(b, now).to.t)
+    : (a, b) => a.line.localeCompare(b.line, 'de', {numeric: true}) || a.towards.localeCompare(b.towards) || posAt(a, now).to.t - posAt(b, now).to.t);
+  return arr;
+}
+function renderList(){
+  const now = Date.now();
+  const lines = [...new Set(SCAN.chains.map(c => c.line))].sort((a, b) => a.localeCompare(b, 'de', {numeric: true}));
+  $('#kE2').textContent = SCAN.at ? SCAN.chains.length : '–';
+  $('#kLines').textContent = SCAN.at ? lines.length : '–';
+  $('#kAll').textContent = SCAN.at ? SCAN.allTrips : '–';
+  $('#kStops').textContent = SCAN.at ? SCAN.stopsQueried : '–';
+  $('#lineFilter').innerHTML = lines.length > 1 ? '<span class="small muted" style="align-self:center">Linie:</span>' + lines.map(l => `<button class="chip ${lineFilter.has(l) ? 'on' : ''}" data-l="${esc(l)}">${esc(l)} <span class="muted">${SCAN.chains.filter(c => c.line === l).length}</span></button>`).join('') : '';
+  const arr = filteredChains();
+  const el = $('#tripList');
+  if(!SCAN.at){ el.innerHTML = '<div class="card empty" style="grid-column:1/-1"><b>Suche läuft…</b>Alle Straßenbahn-Steige werden abgefragt.</div>'; return; }
+  if(!arr.length){ el.innerHTML = '<div class="card empty" style="grid-column:1/-1"><b>' + (SCAN.chains.length ? 'Nichts passt zum Filter' : 'Gerade kein E2 unterwegs') + '</b>' + (SCAN.chains.length ? '' : 'In den Echtzeitdaten fährt im Moment keine Straßenbahn ohne Rollstuhlsymbol. E2 kommen vor allem in der Hauptverkehrszeit an Werktagen als Verstärker zum Einsatz – später nochmal schauen.') + '</div>'; return; }
+  const hzs = horizon === 0 ? [30, 40, 50] : [...new Set([horizon, 30, 40, 50])].sort((a, b) => a - b);
+  el.innerHTML = arr.map(ch => {
+    const pNow = posAt(ch, now);
+    const rows = hzs.map(h => { const T = now + h * 60000, p = posAt(ch, T);
+      return `<div class="t">+${h} · ${hhmm(T)}</div><div>${posText(p, T)} ${p.est ? '<span class="est">geschätzt</span>' : '<span class="meas">Echtzeit</span>'}</div>`; }).join('');
+    const tl = ch.tl.map((x, i) => { const prev = i && ch.tl[i - 1].part !== x.part ? `<li class="small muted" style="list-style:none">— Rückfahrt Richtung ${esc(x.towards)} —</li>` : '';
+      return prev + `<li class="${x.est ? 'e' : 'm'} ${x.t < now - 30000 ? 'past' : ''}"><span class="tt">${hhmm(x.t)}</span>${esc(stopName(x.stopId))}</li>`; }).join('');
+    return `<article class="card trip">
+      <h3><span class="lbadge">${esc(ch.line)}</span><span>→ ${esc(pNow.towards || ch.towards)}</span><span class="e2pill" style="margin-left:auto">E2 · kein ♿</span></h3>
+      <div class="now"><b>Jetzt:</b> ${posText(pNow, now)}</div>
+      <div class="hz">${rows}</div>
+      <details><summary>Alle Halte (${ch.tl.length})${ch.parts.length > 1 ? ' inkl. Rückfahrt' : ''}</summary><ul class="tl">${tl}</ul></details>
+      <div class="row" style="margin-top:8px"><button class="btn sec small" data-map="${esc(ch.id)}">Auf Karte</button></div>
+    </article>`;
+  }).join('');
+}
+$('#lineFilter').onclick = e => { const b = e.target.closest('[data-l]'); if(!b) return; const l = b.dataset.l; lineFilter.has(l) ? lineFilter.delete(l) : lineFilter.add(l); renderList(); renderMap(); };
+$('#tripList').onclick = e => { const b = e.target.closest('[data-map]'); if(!b) return; focusId = b.dataset.map; show('map'); };
+$('#fText').oninput = renderList; $('#fSort').onchange = renderList;
+
+function exportRows(){
+  const now = Date.now();
+  return filteredChains().map(ch => {
+    const cols = [ch.line, ch.towards];
+    for(const h of [0, 30, 40, 50]){ const p = posAt(ch, now + h * 60000); cols.push((p.mode === 'between' || p.mode === 'before' ? stopName(p.to.stopId) : p.mode === 'turn' ? stopName(p.from.stopId) + ' (Wende)' : stopName(p.to.stopId) + ' (Endstelle)') + (p.est ? ' ~' : '')); }
+    return cols;
+  });
+}
+$('#btnCopy').onclick = async () => {
+  const txt = 'E2 in Wien – ' + new Date().toLocaleString('de-AT') + '\n' + exportRows().map(r => `Linie ${r[0]} → ${r[1]}: jetzt ${r[2]} | +30 ${r[3]} | +40 ${r[4]} | +50 ${r[5]}`).join('\n');
+  try{ await navigator.clipboard.writeText(txt); toast('Kopiert'); }catch(e){ toast('Kopieren nicht möglich'); }
+};
+$('#btnCsv').onclick = () => {
+  const rows = [['Linie','Richtung','jetzt','+30 min','+40 min','+50 min'], ...exportRows()];
+  const csv = '﻿' + rows.map(r => r.map(c => '"' + String(c).replace(/"/g, '""') + '"').join(';')).join('\n');
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], {type: 'text/csv'})); a.download = 'e2-wien-' + new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-') + '.csv'; a.click();
+};
+
+/* ================= Karte ================= */
+let map, layer, routeLayer, focusId = null, meMarker;
+function initMap(){
+  if(map || !window.L) return;
+  map = L.map('map', {zoomControl: true}).setView([48.2082, 16.3738], 12);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 19, attribution: '© OpenStreetMap · Daten: Wiener Linien (CC BY 4.0)'}).addTo(map);
+  routeLayer = L.layerGroup().addTo(map); layer = L.layerGroup().addTo(map);
+}
+function renderMap(){
+  const v = +$('#mapT').value; $('#mapTl').textContent = v ? '+' + v + ' min · ' + hhmm(Date.now() + v * 60000) : 'jetzt';
+  if(!$('#v-map').classList.contains('on')) return;
+  if(!window.L){ $('#map').innerHTML = '<div class="empty"><b>Karte nicht geladen</b>Leaflet konnte nicht geladen werden (offline?).</div>'; return; }
+  initMap(); setTimeout(() => map.invalidateSize(), 50);
+  layer.clearLayers(); routeLayer.clearLayers();
+  const now = Date.now(), T = now + v * 60000;
+  const chains = SCAN.chains.filter(c => !lineFilter.size || lineFilter.has(c.line));
+  // Linienwege der Linien mit E2
+  const drawn = new Set();
+  for(const c of chains) for(const p of c.parts){
+    if(drawn.has(p.key)) continue; drawn.add(p.key);
+    const pts = (STATIC.seqs[p.key] || []).map(id => STATIC.stops[id]).filter(s => s && isFinite(s.lat)).map(s => [s.lat, s.lon]);
+    if(pts.length > 1) L.polyline(pts, {color: '#888', weight: 3, opacity: .35}).addTo(routeLayer);
+  }
+  const bounds = []; let focusLL = null;
+  for(const c of chains){
+    const p = posAt(c, T);
+    if(!isFinite(p.lat)) { if(p.mode === 'before'){ const s = STATIC.stops[p.to.stopId]; if(s){ p.lat = s.lat; p.lon = s.lon; } } }
+    if(!isFinite(p.lat)) continue;
+    if($('#mapTrails').checked && v > 0){
+      const trail = [];
+      const p0 = posAt(c, now); if(isFinite(p0.lat)) trail.push([p0.lat, p0.lon]); else { const s = STATIC.stops[p0.to.stopId]; if(s) trail.push([s.lat, s.lon]); }
+      c.tl.forEach(x => { if(x.t > now && x.t < T){ const s = STATIC.stops[x.stopId]; if(s) trail.push([s.lat, s.lon]); } });
+      trail.push([p.lat, p.lon]);
+      L.polyline(trail, {color: p.est ? '#e08a00' : '#d6000f', weight: 4, opacity: .8, dashArray: p.est ? '6 6' : null}).addTo(layer);
+    }
+    const icon = L.divIcon({className: '', html: `<div class="mk ${p.est ? 'est' : ''}" style="width:34px;height:26px">${esc(c.line)}</div>`, iconSize: [34, 26], iconAnchor: [17, 13]});
+    const m = L.marker([p.lat, p.lon], {icon}).addTo(layer);
+    m.bindPopup(`<b>Linie ${esc(c.line)} → ${esc(p.towards || c.towards)}</b><br>E2-Hochflurzug (kein ♿)<br>${v ? hhmm(T) + ': ' : 'Jetzt: '}${posText(p, T)}<br><small>${p.est ? 'hochgerechnet' : 'Echtzeit'}</small>`);
+    bounds.push([p.lat, p.lon]);
+    if(focusId === c.id){ focusLL = [p.lat, p.lon]; setTimeout(() => m.openPopup(), 100); }
+  }
+  if(focusLL){ map.setView(focusLL, 15); focusId = null; }
+  else if(bounds.length && !renderMap.fitted){ map.fitBounds(bounds, {padding: [40, 40], maxZoom: 14}); renderMap.fitted = true; }
+}
+$('#mapT').oninput = () => { renderHzChips(); renderMap(); };
+$('#mapTrails').onchange = renderMap;
+$('#btnLocate').onclick = () => {
+  if(!navigator.geolocation) return toast('Standort nicht verfügbar');
+  navigator.geolocation.getCurrentPosition(p => { initMap(); const ll = [p.coords.latitude, p.coords.longitude];
+    if(meMarker) meMarker.remove(); meMarker = L.circleMarker(ll, {radius: 8, color: '#1a73e8', fillOpacity: .9}).addTo(map); map.setView(ll, 15);
+  }, () => toast('Standort nicht freigegeben'));
+};
+
+/* ================= Haltestelle (iTip-Ansicht) ================= */
+let curDiva = null, sugIdx = -1;
+const favs = () => store.get('e2r_favs', []);
+function renderFavs(){
+  const f = favs();
+  $('#favChips').innerHTML = f.length ? '<span class="small muted" style="align-self:center">★ Favoriten:</span>' + f.map(x => `<button class="chip ${x.diva === curDiva ? 'on' : ''}" data-d="${esc(x.diva)}">${esc(x.name)}</button>`).join('') : '';
+}
+$('#favChips').onclick = e => { const b = e.target.closest('[data-d]'); if(b) openStop(b.dataset.d); };
+$('#stopQ').oninput = () => {
+  const q = $('#stopQ').value.trim().toLowerCase(), ul = $('#stopSug');
+  if(!q || !STATIC){ ul.hidden = true; return; }
+  const res = STATIC.stations.filter(s => s.name.toLowerCase().includes(q)).sort((a, b) => a.name.toLowerCase().indexOf(q) - b.name.toLowerCase().indexOf(q)).slice(0, 12);
+  sugIdx = -1;
+  ul.innerHTML = res.map(s => `<li data-d="${esc(s.diva)}">${esc(s.name)} <span class="small muted">${esc(s.lines.join(', '))}</span></li>`).join('') || '<li class="muted">nichts gefunden</li>';
+  ul.hidden = false;
+};
+$('#stopQ').onkeydown = e => {
+  const lis = [...$('#stopSug').querySelectorAll('li[data-d]')]; if(!lis.length) return;
+  if(e.key === 'ArrowDown' || e.key === 'ArrowUp'){ e.preventDefault(); sugIdx = (sugIdx + (e.key === 'ArrowDown' ? 1 : -1) + lis.length) % lis.length; lis.forEach((l, i) => l.classList.toggle('act', i === sugIdx)); }
+  if(e.key === 'Enter'){ e.preventDefault(); openStop((lis[sugIdx] || lis[0]).dataset.d); }
+};
+$('#stopSug').onclick = e => { const li = e.target.closest('li[data-d]'); if(li) openStop(li.dataset.d); };
+document.addEventListener('click', e => { if(!e.target.closest('.suggest')) $('#stopSug').hidden = true; });
+$('#stopOnlyE2').onchange = () => curDiva && openStop(curDiva, true);
+async function openStop(diva, keep){
+  curDiva = diva; $('#stopSug').hidden = true;
+  const st = STATIC.stations.find(s => s.diva === diva); if(!st) return;
+  $('#stopQ').value = st.name; renderFavs(); store.set('e2r_lastStop', diva);
+  const out = $('#stopOut');
+  if(!keep) out.innerHTML = '<div class="card empty"><b>' + esc(st.name) + '</b>lade Abfahrten…</div>';
+  const ids = STATIC.divaStops[diva] || [];
+  let deps = [];
+  try{ parseMonitors(await wlFetch(WL + '/monitor?' + ids.map(id => 'stopId=' + id).join('&')), deps); }
+  catch(e){ out.innerHTML = '<div class="card note err">Abfahrten nicht erreichbar: ' + esc(e.message) + '</div>'; return; }
+  if(curDiva !== diva) return;
+  const onlyE2 = $('#stopOnlyE2').checked, now = Date.now();
+  const groups = {};
+  for(const d of deps){ if(d.t < now - 60000) continue; const k = d.line + '|' + d.towards; (groups[k] = groups[k] || []).push(d); }
+  const keys = Object.keys(groups).sort((a, b) => a.localeCompare(b, 'de', {numeric: true}));
+  const isFav = favs().some(f => f.diva === diva);
+  const rows = keys.map(k => {
+    const [ln, tw] = k.split('|'); let arr = groups[k].sort((a, b) => a.t - b.t);
+    if(onlyE2 && !arr.some(d => d.e2)) return '';
+    const cds = arr.slice(0, 6).map(d => { const m = Math.max(0, d.countdown != null ? d.countdown : mins(d.t));
+      return d.e2 ? `<span class="cd e2" title="E2 – nicht barrierefrei, ${hhmm(d.t)}">${m}′ <span style="font-size:10.5px">E2</span></span>`
+                  : `<span class="cd" title="${d.bfKnown ? 'barrierefrei' : 'unbekannt'}, ${hhmm(d.t)}">${m}′ ${d.bfKnown ? WHEEL : ''}</span>`; }).join('');
+    return `<div class="dep"><span class="lbadge">${esc(ln)}</span><span>${esc(tw)}</span><div class="cds">${cds}</div></div>`;
+  }).join('');
+  // Hochrechnung: E2, die diese Station in der nächsten Stunde erreichen
+  const idset = new Set(ids);
+  const coming = [];
+  for(const ch of SCAN.chains) for(const x of ch.tl) if(idset.has(x.stopId) && x.t > now - 30000 && x.t < now + 65 * 60000) coming.push({ch, x});
+  coming.sort((a, b) => a.x.t - b.x.t);
+  const comingHtml = coming.length ? coming.map(({ch, x}) => `<div class="dep"><span class="lbadge">${esc(ch.line)}</span><span>→ ${esc(x.towards)}</span><div class="cds"><span class="cd e2">${hhmm(x.t)} · ${Math.max(0, mins(x.t))}′</span> ${x.est ? '<span class="est">geschätzt</span>' : '<span class="meas">Echtzeit</span>'}</div></div>`).join('')
+    : '<p class="muted small">Laut letztem Scan kommt in der nächsten Stunde kein E2 hier vorbei.</p>';
+  out.innerHTML = `<div class="card">
+      <div class="row" style="margin-bottom:6px"><h2 style="margin:0">${esc(st.name)}</h2><button class="star ${isFav ? 'on' : ''}" id="favBtn" title="Favorit">${isFav ? '★' : '☆'}</button><span class="small muted" style="margin-left:auto">Stand ${hhmm(now)} · <a href="#" id="stopRefresh">aktualisieren</a></span></div>
+      ${rows || '<p class="muted">' + (onlyE2 ? 'Gerade kein E2 in den Abfahrten.' : 'Keine Straßenbahn-Abfahrten.') + '</p>'}
+      <p class="small muted" style="margin:8px 0 0">${WHEEL.replace('<svg', '<svg style="width:13px;height:13px;vertical-align:-2px"')} = barrierefrei (wie im iTip) · <span class="e2pill">E2</span> = Rollstuhlsymbol fehlt, alter Hochflurzug</p>
+    </div>
+    <div class="card" style="margin-top:12px"><h2>E2 zu dieser Haltestelle – nächste Stunde</h2>${comingHtml}</div>`;
+  $('#favBtn').onclick = () => { let f = favs(); f = isFav ? f.filter(x => x.diva !== diva) : [...f, {diva, name: st.name}]; store.set('e2r_favs', f); openStop(diva, true); };
+  $('#stopRefresh').onclick = e => { e.preventDefault(); openStop(diva, true); };
+}
+
+/* ================= Linien ================= */
+function renderLines(){
+  const el = $('#lineTable');
+  if(!SCAN.at){ el.innerHTML = '<p class="muted">Noch kein Scan.</p>'; return; }
+  const stats = {};
+  for(const t of SCAN.trips){ if(!t.realtime) continue; const s = stats[t.line] = stats[t.line] || {all: 0, e2: 0}; s.all++; if(t.e2) s.e2++; }
+  const rows = Object.entries(stats).sort((a, b) => b[1].e2 - a[1].e2 || a[0].localeCompare(b[0], 'de', {numeric: true}));
+  el.innerHTML = '<table><thead><tr><th>Linie</th><th class="n">E2-Fahrten</th><th class="n">erfasst</th><th>Anteil</th></tr></thead><tbody>' +
+    rows.map(([l, s]) => `<tr><td><span class="lbadge" style="height:24px;min-width:30px;font-size:13px">${esc(l)}</span></td><td class="n"><b>${s.e2}</b></td><td class="n">${s.all}</td><td><div class="bar"><i style="width:${s.all ? Math.round(s.e2 / s.all * 100) : 0}%"></i></div></td></tr>`).join('') +
+    '</tbody></table>' + (SCAN.fast ? '<p class="small muted">Schnellmodus: nur Linien mit E2 wurden zuletzt abgefragt.</p>' : '');
+}
+
+/* ================= Einstellungen ================= */
+function renderLineSettings(){
+  const el = $('#sLines'); if(!STATIC) return;
+  el.innerHTML = STATIC.lines.map(l => `<button class="chip ${S.lines.includes(l.name) ? 'on' : ''}" data-l="${esc(l.name)}">${esc(l.name)}</button>`).join('');
+}
+$('#sLines').onclick = e => { const b = e.target.closest('[data-l]'); if(b) b.classList.toggle('on'); };
+function fillSettings(){
+  $('#sProxy').value = S.proxy; $('#sCustom').value = S.custom; $('#sInterval').value = String(S.interval);
+  $('#sFast').checked = S.fast; $('#sBatch').value = S.batch; $('#sNotify').checked = S.notify; $('#sNotifyMin').value = S.notifyMin;
+  $('#sTheme').value = S.theme; $('#sDemo').checked = S.demo;
+}
+$('#btnSave').onclick = async () => {
+  const demoBefore = S.demo;
+  Object.assign(S, {proxy: $('#sProxy').value, custom: $('#sCustom').value.trim(), interval: +$('#sInterval').value, fast: $('#sFast').checked,
+    batch: +$('#sBatch').value || 40, notify: $('#sNotify').checked, notifyMin: +$('#sNotifyMin').value || 10, theme: $('#sTheme').value, demo: $('#sDemo').checked,
+    lines: [...$('#sLines').querySelectorAll('.chip.on')].map(b => b.dataset.l)});
+  store.set('e2r_settings', S); applyTheme();
+  if(S.notify && 'Notification' in window && Notification.permission === 'default') Notification.requestPermission();
+  toast('Gespeichert');
+  if(demoBefore !== S.demo){ STATIC = null; SCAN = {deps: [], trips: [], chains: [], at: 0}; await boot(); }
+  else { schedule(); scan({full: true}); }
+};
+$('#btnReloadStatic').onclick = async () => { try{ await loadStatic(true); toast('Haltestellen neu geladen'); scan({full: true}); }catch(e){ note('Stammdaten: ' + esc(e.message), true); } };
+const WORKER = `export default {
+  async fetch(req) {
+    const u = new URL(req.url).searchParams.get('url');
+    if (!u || !u.startsWith('https://www.wienerlinien.at/ogd_realtime/'))
+      return new Response('nur Wiener Linien OGD', { status: 400 });
+    const r = await fetch(u, { cf: { cacheTtl: 15 } });
+    const h = new Headers(r.headers);
+    h.set('Access-Control-Allow-Origin', '*');
+    return new Response(r.body, { status: r.status, headers: h });
+  }
+};`;
+$('#workerCode').textContent = WORKER;
+$('#btnCopyWorker').onclick = async () => { try{ await navigator.clipboard.writeText(WORKER); toast('Kopiert'); }catch(e){ toast('Kopieren nicht möglich'); } };
+window.goSettings = () => show('settings');
+window.enableDemo = () => { $('#sDemo').checked = true; $('#btnSave').click(); };
+
+/* ================= Benachrichtigung ================= */
+function checkNotify(){
+  if(!S.notify || !('Notification' in window) || Notification.permission !== 'granted') return;
+  const f = favs(); if(!f.length) return;
+  const now = Date.now();
+  for(const fav of f){
+    const ids = new Set(STATIC.divaStops[fav.diva] || []);
+    for(const ch of SCAN.chains) for(const x of ch.tl){
+      if(!ids.has(x.stopId) || x.t < now || x.t > now + S.notifyMin * 60000) continue;
+      const key = ch.id + '@' + fav.diva;
+      if(notified[key]) continue;
+      notified[key] = now;
+      try{ new Notification('E2 Linie ' + ch.line + ' kommt', {body: fav.name + ' um ' + hhmm(x.t) + ' (in ' + Math.max(0, mins(x.t)) + ' min) Richtung ' + x.towards + (x.est ? ' – geschätzt' : '')}); }catch(e){}
+    }
+  }
+  for(const k in notified) if(now - notified[k] > 3 * 3600e3) delete notified[k];
+  store.set('e2r_notified', notified);
+}
+
+/* ================= Rahmen ================= */
+function setStatus(txt){
+  if(txt){ $('#status').textContent = txt; return; }
+  $('#status').innerHTML = SCAN.at ? `${S.demo ? 'DEMO · ' : ''}Stand ${hhmm(SCAN.at)}<br>${SCAN.chains.length} E2 gefunden` : (S.demo ? 'DEMO' : '');
+}
+function prog(f){ $('#prog').style.width = (f > 0 ? Math.min(100, f * 100) : 0) + '%'; }
+function note(html, isErr){ $('#globalNote').innerHTML = html ? `<div class="note ${isErr ? 'err' : ''}">${html}</div>` : ''; }
+function show(v){
+  document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.v === v));
+  document.querySelectorAll('.view').forEach(s => s.classList.toggle('on', s.id === 'v-' + v));
+  if(v === 'map') renderMap(); if(v === 'lines') renderLines(); if(v === 'settings') fillSettings();
+  window.scrollTo(0, 0);
+}
+$('#tabs').onclick = e => { const b = e.target.closest('button'); if(b) show(b.dataset.v); };
+$('#btnScan').onclick = () => { scan({full: true}); if(curDiva && $('#v-stop').classList.contains('on')) openStop(curDiva, true); };
+function renderAll(){ renderHzChips(); renderList(); renderMap(); renderLines(); setStatus(); }
+function schedule(){ clearInterval(timer); if(S.interval > 0) timer = setInterval(() => { if(!document.hidden) scan(); }, S.interval * 1000); }
+setInterval(() => { if(SCAN.at){ renderList(); if($('#v-map').classList.contains('on')) renderMap(); } }, 30000);
+document.addEventListener('visibilitychange', () => { if(!document.hidden && SCAN.at && Date.now() - SCAN.at > Math.max(60, S.interval) * 1000) scan(); });
+async function boot(){
+  renderHzChips(); renderFavs(); setStatus('lädt…');
+  try{ await loadStatic(false); }
+  catch(e){
+    note('Haltestellen-Daten der Wiener Linien nicht erreichbar (' + esc(e.message || e) + '). Wahrscheinlich blockiert der Browser den Zugriff – stell unter Einstellungen einen Proxy ein oder schau dir die Demo an. <button class="btn sec" onclick="goSettings()">Einstellungen</button> <button class="btn sec" onclick="enableDemo()">Demo ansehen</button>', true);
+    setStatus('offline'); log('Stammdaten-Fehler: ' + (e.message || e)); return;
+  }
+  note(S.demo ? 'Demo-Modus: erfundene Züge auf zwei Beispiellinien. In den Einstellungen abschalten für echte Daten.' : '', false);
+  const ls = store.get('e2r_lastStop', null); if(ls && STATIC.divaStops[ls]){ const st = STATIC.stations.find(s => s.diva === ls); if(st) $('#stopQ').value = st.name; }
+  schedule(); await scan({full: true});
+}
+
+/* ================= Demo-Daten ================= */
+const DEMO = (() => {
+  const L5 = ['Praterstern','Nordbahnstraße','Am Tabor','Rauscherstraße','Wallensteinplatz','Friedensbrücke','Franz-Josefs-Bahnhof','Spitalgasse','Lange Gasse','Laudongasse','Kaiserstraße','Burggasse','Westbahnhof'];
+  const C5 = [[48.2185,16.3920],[48.2230,16.3850],[48.2262,16.3790],[48.2275,16.3730],[48.2290,16.3700],[48.2275,16.3645],[48.2255,16.3605],[48.2190,16.3510],[48.2120,16.3480],[48.2115,16.3460],[48.2060,16.3420],[48.2020,16.3400],[48.1966,16.3380]];
+  const L18 = ['Westbahnhof','Mariahilfer Gürtel','Gumpendorfer Gürtel','Margaretengürtel','Matzleinsdorfer Platz','Kliebergasse','Hauptbahnhof Ost','Südbahnhof','Fasangasse','St. Marx','Schlachthausgasse'];
+  const C18 = [[48.1966,16.3380],[48.1935,16.3395],[48.1905,16.3410],[48.1860,16.3480],[48.1810,16.3560],[48.1810,16.3640],[48.1855,16.3790],[48.1875,16.3830],[48.1890,16.3870],[48.1900,16.3950],[48.1950,16.4020]];
+  const LINES = [{id:'101', name:'5', stops:L5, c:C5, head:360, e2:k => k % 3 === 0}, {id:'102', name:'18', stops:L18, c:C18, head:300, e2:k => k % 4 === 1}];
+  const base = Date.UTC(2026, 0, 1);
+  const sid = (li, dir, i) => String(9000 + li * 100 + dir * 30 + i);
+  const fmt = ms => { const d = new Date(ms), o = -d.getTimezoneOffset(), p = n => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}.000${o >= 0 ? '+' : '-'}${p(Math.floor(Math.abs(o)/60))}${p(Math.abs(o)%60)}`; };
+  function csv(name){
+    if(name.includes('ogd-linien')) return 'LineID;LineText;SortingHelper;Realtime;MeansOfTransport\n' + LINES.map(l => `${l.id};"${l.name}";${l.name};1;ptTram`).join('\n') + '\n999;"13A";13;1;ptBusCity';
+    if(name.includes('haltepunkte')){
+      const r = ['StopID;DIVA;StopText;Municipality;MunicipalityID;Longitude;Latitude'];
+      LINES.forEach((l, li) => l.stops.forEach((s, i) => [1, 2].forEach(dir => r.push(`${sid(li, dir, i)};${60200000 + li * 100 + i};"${s}";Wien;90001;${l.c[i][1] + (dir === 2 ? .0002 : 0)};${l.c[i][0]}`))));
+      return r.join('\n');
+    }
+    const r = ['LineID;PatternID;StopSeqCount;StopID;Direction'];
+    LINES.forEach((l, li) => { const n = l.stops.length;
+      for(let i = 0; i < n; i++){ r.push(`${l.id};1;${i + 1};${sid(li, 1, i)};1`); r.push(`${l.id};2;${i + 1};${sid(li, 2, n - 1 - i)};2`); } });
+    return r.join('\n');
+  }
+  function monitor(url){
+    const ids = [...new URL(url).searchParams.getAll('stopId')];
+    const now = Date.now(), mons = [];
+    for(const id of ids){
+      LINES.forEach((l, li) => [1, 2].forEach(dir => {
+        const n = l.stops.length;
+        for(let i = 0; i < n; i++){
+          if(sid(li, dir, i) !== id) continue;
+          const seqPos = dir === 1 ? i : n - 1 - i;
+          if(seqPos === n - 1) continue;
+          const towards = dir === 1 ? l.stops[n - 1] : l.stops[0];
+          const deps = [];
+          const cycle = l.head;
+          const kNow = Math.floor((now - base) / 1000 / cycle);
+          for(let k = kNow - 30; k < kNow + 20 && deps.length < 6; k++){
+            const start = base + k * cycle * 1000 + (dir === 2 ? 150000 : 0);
+            const jitter = ((k * 7919 + seqPos * 31) % 40) * 1000;
+            const t = start + seqPos * 100000 + jitter;
+            if(t < now) continue;
+            const e2 = l.e2(((k % 1000) + 1000) % 1000 + (dir === 2 ? 1 : 0));
+            deps.push({departureTime: {timePlanned: fmt(t - jitter), timeReal: fmt(t), countdown: Math.max(0, Math.floor((t - now) / 60000))},
+              vehicle: {name: l.name, towards, richtungsId: String(dir), barrierFree: !e2, realtimeSupported: true, type: 'ptTram'}});
+          }
+          mons.push({locationStop: {type: 'Feature', geometry: {type: 'Point', coordinates: [l.c[i][1], l.c[i][0]]}, properties: {name: '60200' + i, title: l.stops[i], attributes: {rbl: +id}}},
+            lines: [{name: l.name, towards, direction: dir === 1 ? 'H' : 'R', richtungsId: String(dir), barrierFree: true, realtimeSupported: true, type: 'ptTram', departures: {departure: deps}}]});
+        }
+      }));
+    }
+    return {data: {monitors: mons}, message: {value: 'OK', messageCode: 1}};
+  }
+  return {fetch: async (url, asText) => { await new Promise(r => setTimeout(r, 60)); return url.endsWith('.csv') ? csv(url) : monitor(url); }};
+})();
+
+boot();
+</script>
+</body>
+</html>
